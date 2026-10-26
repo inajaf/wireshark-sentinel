@@ -98,7 +98,7 @@ public struct IdentityResolver: Sendable {
 
     /// One sentence for the report: what this host is, or why nobody named it.
     public func explanation(for identity: EndpointIdentity, host: String) -> String {
-        guard let name = identity.displayName,
+        guard let name = identity.evidencedName,
               let best = identity.facts.first(where: { $0.value == name }) else {
             return "\(host) is unidentified: no SNI, HTTP Host, DNS name, certificate, PTR record or known service was seen for it."
         }

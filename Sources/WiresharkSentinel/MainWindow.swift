@@ -111,8 +111,8 @@ extension Verdict {
     var label: String {
         switch self {
         case .suspicious: return "Possibly spying"
-        case .unknown: return "Unidentified"
-        case .known: return "Identified"
+        case .unknown: return "Not sure yet"
+        case .known: return "Expected"
         }
     }
 }

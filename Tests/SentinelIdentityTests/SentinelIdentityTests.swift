@@ -40,7 +40,7 @@ final class SentinelIdentityTests: XCTestCase {
         XCTAssertTrue(facts.contains(IdentityFact(value: "ptr.example.net", source: .ptr, confidence: .inferred)))
 
         let identity = resolver.identity(host: "104.20.23.154", facts: facts)
-        XCTAssertEqual(identity.displayName, "example.com")
+        XCTAssertEqual(identity.evidencedName, "example.com")
         XCTAssertEqual(identity.service, "https")
         XCTAssertTrue(identity.isIdentified)
         XCTAssertTrue(resolver.explanation(for: identity, host: "104.20.23.154").contains("the TLS server name"))
@@ -68,7 +68,7 @@ final class SentinelIdentityTests: XCTestCase {
         let packet = FixturePackets.crafted(from: "192.168.1.80", to: "203.0.113.7", destinationPort: 80, proto: "HTTP", fields: ["http_host": ["example.com"]])
         let facts = offline.observe(packet)["203.0.113.7"] ?? []
         XCTAssertTrue(facts.contains(IdentityFact(value: "example.com", source: .httpHost, confidence: .observed)))
-        XCTAssertEqual(offline.identity(host: "203.0.113.7", facts: facts).displayName, "example.com")
+        XCTAssertEqual(offline.identity(host: "203.0.113.7", facts: facts).evidencedName, "example.com")
     }
 
     func testCertificateLinePicksOneNameAndNeverTheWholeRDNList() throws {
@@ -90,7 +90,7 @@ final class SentinelIdentityTests: XCTestCase {
         let competing = FixturePackets.crafted(from: "104.20.23.154", to: "192.168.1.80", sourcePort: 443, destinationPort: 53791, fields: claimed)
         let merged = (offline.observe(hello)["104.20.23.154"] ?? []) + (offline.observe(competing)["104.20.23.154"] ?? [])
         XCTAssertTrue(merged.contains(IdentityFact(value: "cdn.other.example", source: .tlsSubject, confidence: .inferred)))
-        XCTAssertEqual(offline.identity(host: "104.20.23.154", facts: merged).displayName, "example.com")
+        XCTAssertEqual(offline.identity(host: "104.20.23.154", facts: merged).evidencedName, "example.com")
     }
 
     func testTheCaptureNamesItsKnownHostsFromSNIAndDNS() throws {
@@ -98,13 +98,42 @@ final class SentinelIdentityTests: XCTestCase {
         for (frame, host, name) in hosts {
             let facts = offline.observe(try FixturePackets.packet(frame))[host] ?? []
             let identity = offline.identity(host: host, facts: facts)
-            XCTAssertEqual(identity.displayName, name, "frame \(frame)")
+            XCTAssertEqual(identity.evidencedName, name, "frame \(frame)")
             XCTAssertEqual(identity.service, "https", "frame \(frame)")
         }
 
         let asked = offline.observe(try FixturePackets.packet(17))["www.apple.com"] ?? []
         XCTAssertEqual(asked.first?.source, .dnsQuery)
-        XCTAssertEqual(offline.identity(host: "www.apple.com", facts: asked).displayName, "www.apple.com")
+        XCTAssertEqual(offline.identity(host: "www.apple.com", facts: asked).evidencedName, "www.apple.com")
+    }
+
+    func testGroupAddressRangesAreCovered() {
+        for address in ["224.0.0.251", "239.255.255.250", "255.255.255.255", "ff02::fb", "ff05::1"] {
+            XCTAssertTrue(AddressScope.isMulticastOrBroadcast(address), address)
+        }
+        for address in ["192.168.1.94", "8.8.8.8", "fe80::1", "223.255.255.255"] {
+            XCTAssertFalse(AddressScope.isMulticastOrBroadcast(address), address)
+        }
+    }
+
+    func testANameNeedsNamingEvidence() {
+        var serviceOnly = EndpointIdentity()
+        serviceOnly.facts = [IdentityFact(value: "https", source: .serviceCatalog, confidence: .inferred)]
+        serviceOnly.service = "https"
+        XCTAssertNil(serviceOnly.evidencedName, "a port label is not a name")
+        XCTAssertEqual(serviceOnly.serviceGuess, "https")
+
+        var addressOnly = EndpointIdentity()
+        addressOnly.facts = [IdentityFact(value: "203.0.113.9", source: .sni, confidence: .observed)]
+        XCTAssertNil(addressOnly.evidencedName, "an address literal is not a name")
+
+        var observed = EndpointIdentity()
+        observed.facts = [
+            IdentityFact(value: "cdn.example.net", source: .ptr, confidence: .inferred),
+            IdentityFact(value: "api.example.com", source: .sni, confidence: .observed),
+        ]
+        XCTAssertEqual(observed.evidencedName, "api.example.com", "observed evidence outranks inferred")
+        XCTAssertEqual(observed.evidencedNameFact?.source, .sni)
     }
 
     func testServiceCatalogNamesThePortsThisMacUses() {

@@ -60,6 +60,55 @@ final class SentinelSuspicionTests: XCTestCase {
         XCTAssertEqual(assessment.rationale, "")
     }
 
+    func testAGroupConversationIsNeverAnAccusation() {
+        let engine = SuspicionEngine()
+        // A LAN device announcing itself to a broadcast address on a regular timer.
+        let broadcast = FlowObservation(
+            key: FlowKey(transport: .udp,
+                         local: Endpoint(host: "255.255.255.255", port: 6667),
+                         remote: Endpoint(host: "192.168.1.94", port: 6667)),
+            direction: .broadcast,
+            packetTimes: stride(from: 0.0, to: 25.0, by: 5.0).map { Date(timeIntervalSince1970: $0) },
+            byteCount: 800,
+            identity: EndpointIdentity(),
+            process: nil,
+            protocols: ["UDP"],
+            sawPlaintext: false,
+            isInboundInitiated: false
+        )
+        XCTAssertEqual(engine.assess(broadcast).verdict, .unknown,
+                       "an unidentified LAN broadcast repeating on a timer is not spying")
+
+        // This Mac sending to a group address is not a suspicion either.
+        let outboundGroup = FlowObservation(
+            key: FlowKey(transport: .udp,
+                         local: Endpoint(host: "192.168.1.80", port: 5353),
+                         remote: Endpoint(host: "239.255.255.250", port: 1900)),
+            direction: .outbound,
+            packetTimes: [Date(timeIntervalSince1970: 0), Date(timeIntervalSince1970: 5),
+                          Date(timeIntervalSince1970: 10), Date(timeIntervalSince1970: 15),
+                          Date(timeIntervalSince1970: 20)],
+            byteCount: 400,
+            identity: EndpointIdentity(),
+            protocols: ["SSDP"],
+            sawPlaintext: true
+        )
+        XCTAssertEqual(engine.assess(outboundGroup).verdict, .unknown)
+
+        // The same shape on a unicast address may still be an accusation.
+        let unicast = FlowObservation(
+            key: FlowKey(transport: .udp,
+                         local: Endpoint(host: "192.168.1.80", port: 53184),
+                         remote: Endpoint(host: "192.168.1.94", port: 6667)),
+            direction: .outbound,
+            packetTimes: stride(from: 0.0, to: 25.0, by: 5.0).map { Date(timeIntervalSince1970: $0) },
+            byteCount: 800,
+            identity: EndpointIdentity(),
+            protocols: ["UDP"]
+        )
+        XCTAssertEqual(engine.assess(unicast).verdict, .suspicious)
+    }
+
     func testPrivateAndMulticastDestinationsAreNeverSuspiciousOnIdentityAlone() {
         let heavy = SuspicionEngine(policy: SuspicionPolicy(weights: [.unknownDestination: 100]))
         XCTAssertEqual(heavy.assess(flow(remote: "203.0.113.9")).verdict, .suspicious)

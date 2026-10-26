@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 // The frozen contract for every other file in this package.
 // Types here change only through the Lead. Implementations must not edit this file.
@@ -226,25 +227,57 @@ public struct EndpointIdentity: Sendable {
         self.isPrivate = isPrivate
     }
 
-    /// The best human-readable name, observed facts before inferred ones.
-    public var displayName: String? {
-        let ranked = facts.sorted { lhs, rhs in
-            rank(lhs.confidence) < rank(rhs.confidence)
+    /// Sources that name the remote resource itself. A port number is not one of them.
+    public static let namingSources: Set<IdentitySource> = [
+        .sni, .httpHost, .dnsQuery, .ptr, .tlsSubject, .tlsIssuer, .manual,
+    ]
+
+    /// The best name the evidence supports. Observed before inferred, never an address
+    /// literal, and never a port label. This is the only definition of "a name".
+    public var evidencedName: String? { evidencedNameFact?.value }
+
+    public var evidencedNameFact: IdentityFact? {
+        facts
+            .filter { Self.namingSources.contains($0.source) }
+            .filter { $0.confidence != .unknown }
+            .filter { !$0.value.trimmingCharacters(in: .whitespaces).isEmpty }
+            .filter { !Self.isAddressLiteral($0.value) }
+            .sorted { Self.rank($0.confidence) < Self.rank($1.confidence) }
+            .first
+    }
+
+    /// What the port suggests, always a guess. Never a name.
+    public var serviceGuess: String? {
+        if let value = facts.first(where: { $0.source == .serviceCatalog || $0.source == .portTable })?.value,
+           !value.trimmingCharacters(in: .whitespaces).isEmpty {
+            return value
         }
-        return ranked.first?.value
+        guard let service, !service.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        return service
+    }
+
+    public static func isAddressLiteral(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        var v4 = in_addr()
+        var v6 = in6_addr()
+        if inet_pton(AF_INET, trimmed, &v4) == 1 { return true }
+        if inet_pton(AF_INET6, trimmed, &v6) == 1 { return true }
+        return false
+    }
+
+    public static func rank(_ confidence: Confidence) -> Int {
+        switch confidence {
+        case .observed: return 0
+        case .inferred: return 1
+        case .unknown: return 2
+        }
     }
 
     public var isIdentified: Bool {
         facts.contains { $0.confidence != .unknown } || organization != nil || service != nil
     }
 
-    private func rank(_ c: Confidence) -> Int {
-        switch c {
-        case .observed: return 0
-        case .inferred: return 1
-        case .unknown: return 2
-        }
-    }
+
 }
 
 // MARK: - Attribution
@@ -381,7 +414,14 @@ public enum AddressScope {
         return false
     }
 
+    /// Every IPv4 multicast address is 224.0.0.0/4, which is 224 through 239, plus the
+    /// limited broadcast address. Every IPv6 multicast address starts with ff.
     public static func isMulticastOrBroadcast(_ host: String) -> Bool {
-        host == "255.255.255.255" || host.hasPrefix("224.") || host.lowercased().hasPrefix("ff02:")
+        if host == "255.255.255.255" { return true }
+        let lowered = host.lowercased()
+        if lowered.hasPrefix("ff") { return true }
+        let parts = host.split(separator: ".")
+        if parts.count == 4, let first = Int(parts[0]) { return (224...239).contains(first) }
+        return false
     }
 }

@@ -176,7 +176,9 @@ public struct SuspicionEngine: Sendable {
 
     private func verdict(score: Int, signals: [Signal], observation: FlowObservation) -> Verdict {
         let identityOnly = signals.allSatisfy { $0.kind == .unknownDestination }
-        let capAtUnknown = observation.hasNonPublicDestination && identityOnly
+        // A broadcast or multicast conversation is one machine announcing itself to a
+        // group. A regular timer there is ordinary LAN behaviour, not an accusation.
+        let capAtUnknown = (observation.hasNonPublicDestination && identityOnly) || observation.isGroupDestination
         if score >= policy.suspiciousScore && !capAtUnknown { return .suspicious }
         if score >= policy.unknownScore { return .unknown }
         return .known
@@ -287,7 +289,8 @@ private extension FlowObservation {
     var isGroupDestination: Bool {
         switch direction {
         case .broadcast, .multicast: return true
-        case .inbound, .outbound, .loopback: return false
+        case .inbound, .outbound, .loopback:
+            return AddressScope.isMulticastOrBroadcast(key.remote.host)
         }
     }
 

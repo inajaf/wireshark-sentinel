@@ -53,7 +53,7 @@ struct AssessmentCard: View {
                 Circle()
                     .fill(assessment.verdict.tint)
                     .frame(width: 8, height: 8)
-                Text(assessment.identity.displayName ?? "unidentified resource")
+                Text(assessment.identity.evidencedName ?? "unidentified resource")
                     .font(.callout.weight(.semibold))
                     .lineLimit(1)
                 Spacer()
@@ -68,6 +68,13 @@ struct AssessmentCard: View {
             Text("\(assessment.key.transport.rawValue.uppercased()) \(directionWord) \(assessment.key.remoteEndpoint.description)")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
+
+            if let service = assessment.identity.serviceGuess {
+                Label("port \(assessment.key.remote.port) looks like \(service), a guess not a name",
+                      systemImage: "questionmark.diamond")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
 
             if let process = assessment.process {
                 Label(
@@ -117,7 +124,7 @@ struct AssessmentCard: View {
         case .inbound: return "inbound from"
         case .outbound: return "to"
         case .loopback: return "on this Mac to"
-        case .broadcast: return "broadcast to"
+        case .broadcast: return "broadcast by"
         case .multicast: return "multicast to"
         }
     }
