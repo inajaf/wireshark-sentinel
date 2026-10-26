@@ -8,37 +8,59 @@ import SentinelAttribution
 import SentinelSuspicion
 import SentinelReport
 
+/// A conversation as a person thinks about it: one remote service, one direction.
+///
+/// Keying on the whole 5-tuple made every DNS query from a fresh ephemeral port a
+/// separate conversation, which turned 35 real conversations into 16 copies of the
+/// same router lookup.
+struct ConversationKey: Hashable, Sendable {
+    let transport: TransportProtocol
+    let remoteHost: String
+    let remotePort: UInt16
+    let direction: FlowDirection
+}
+
 /// One conversation, accumulated as packets arrive.
 struct FlowAggregate: Sendable {
-    var key: FlowKey
-    var direction: FlowDirection
+    var key: ConversationKey
+    /// First-seen full key, kept for reporting and attribution.
+    var representative: FlowKey
+    /// Local ports seen, most recent first. A long-lived conversation rotates them.
+    var localPorts: [UInt16]
     var packetTimes: [Date]
     var byteCount: Int
     var protocols: Set<String>
     var sawPlaintext: Bool
-    var firstWasInbound: Bool
+    var inboundInitiated: Bool
 
-    init(key: FlowKey, direction: FlowDirection, firstWasInbound: Bool) {
+    init(key: ConversationKey, representative: FlowKey, inboundInitiated: Bool) {
         self.key = key
-        self.direction = direction
+        self.representative = representative
+        self.localPorts = []
         self.packetTimes = []
         self.byteCount = 0
         self.protocols = []
         self.sawPlaintext = false
-        self.firstWasInbound = firstWasInbound
+        self.inboundInitiated = inboundInitiated
+    }
+
+    mutating func noteLocalPort(_ port: UInt16) {
+        guard port != 0, !localPorts.contains(port) else { return }
+        localPorts.insert(port, at: 0)
+        if localPorts.count > 8 { localPorts.removeLast() }
     }
 
     var observation: FlowObservation {
         FlowObservation(
-            key: key,
-            direction: direction,
+            key: representative,
+            direction: key.direction,
             packetTimes: packetTimes,
             byteCount: byteCount,
             identity: EndpointIdentity(),
             process: nil,
             protocols: protocols,
             sawPlaintext: sawPlaintext,
-            isInboundInitiated: firstWasInbound
+            isInboundInitiated: inboundInitiated
         )
     }
 }
@@ -64,15 +86,39 @@ final class SentinelModel: ObservableObject {
     private var attributor: ProcessAttributor?
     private let suspicion = SuspicionEngine()
 
-    private var flows: [FlowKey: FlowAggregate] = [:]
+    private var flows: [ConversationKey: FlowAggregate] = [:]
     private var factsByHost: [String: [IdentityFact]] = [:]
     private var streamTask: Task<Void, Never>?
     private var reaperTask: Task<Void, Never>?
+    private var publisherTask: Task<Void, Never>?
+    private var pendingPackets: [CapturedPacket] = []
     private var localAddresses: Set<String> = []
     private var captureStartedAt: Date?
     private var processedPackets = 0
 
     private static let packetLimit = 20_000
+
+    /// Publishing every packet makes SwiftUI re-diff the whole table per packet, which
+    /// throttled ingest to about 61 packets a second on this machine. Publishing in
+    /// batches keeps the window responsive without dropping traffic.
+    private static let publishBatch = 64
+    private static let publishInterval: UInt64 = 250_000_000
+
+    private func flushPackets() {
+        guard !pendingPackets.isEmpty else { return }
+        packets.append(contentsOf: pendingPackets)
+        pendingPackets.removeAll(keepingCapacity: true)
+    }
+
+    private func startPublisher() {
+        publisherTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.publishInterval)
+                guard let self else { return }
+                await MainActor.run { self.flushPackets() }
+            }
+        }
+    }
 
     func bootstrap(selfTestPath: String?, seconds: TimeInterval, interfaceID: String?) async {
         localAddresses = LocalAddresses.current()
@@ -121,6 +167,7 @@ final class SentinelModel: ObservableObject {
                 }
             }
             startReaper()
+            startPublisher()
         } catch {
             isCapturing = false
             statusText = "Capture failed: \(error)"
@@ -132,7 +179,10 @@ final class SentinelModel: ObservableObject {
         streamTask = nil
         reaperTask?.cancel()
         reaperTask = nil
+        publisherTask?.cancel()
+        publisherTask = nil
         await engine?.stop()
+        flushPackets()
         isCapturing = false
         statusText = "Stopped after \(packets.count) packets and \(assessments.count) conversations."
     }
@@ -151,54 +201,128 @@ final class SentinelModel: ObservableObject {
     private func ingest(_ packet: CapturedPacket) {
         processedPackets += 1
         if packets.count < Self.packetLimit {
-            packets.append(packet)
+            pendingPackets.append(packet)
+        }
+        if pendingPackets.count >= Self.publishBatch {
+            flushPackets()
         }
 
         for (host, facts) in identity.observe(packet) {
             factsByHost[host, default: []].append(contentsOf: facts)
         }
 
-        let isIPv6 = packet.source.contains(":")
-        let sourceIsLocal = localAddresses.contains(packet.source) || packet.source.hasPrefix("fe80")
-        let destinationIsLocal = localAddresses.contains(packet.destination)
-        let transport: TransportProtocol = packet.transport
-        _ = isIPv6
+        // A conversation needs a remote service. `orient` drops ARP and neighbour
+        // discovery, which have neither host nor port and would surface as "unknown:0".
+        guard let oriented = Self.orient(packet, localAddresses: localAddresses) else { return }
 
-        let key: FlowKey
-        let direction: FlowDirection
-        var firstWasInbound = false
+        let conversation = ConversationKey(
+            transport: oriented.key.transport,
+            remoteHost: oriented.key.remoteEndpoint.host,
+            remotePort: oriented.key.remoteEndpoint.port,
+            direction: oriented.direction
+        )
 
-        if sourceIsLocal && !destinationIsLocal {
-            key = FlowKey(
-                transport: transport,
-                local: Endpoint(host: packet.source, port: packet.sourcePort),
-                remote: Endpoint(host: packet.destination, port: packet.destinationPort)
+        if flows[conversation] == nil {
+            flows[conversation] = FlowAggregate(
+                key: conversation,
+                representative: oriented.key,
+                inboundInitiated: oriented.inboundInitiated
             )
-            direction = .outbound
-        } else if destinationIsLocal && !sourceIsLocal {
-            key = FlowKey(
-                transport: transport,
-                local: Endpoint(host: packet.destination, port: packet.destinationPort),
-                remote: Endpoint(host: packet.source, port: packet.sourcePort)
-            )
-            direction = .inbound
-            firstWasInbound = true
+        }
+        flows[conversation]?.noteLocalPort(oriented.key.localEndpoint.port)
+        flows[conversation]?.packetTimes.append(packet.time)
+        flows[conversation]?.byteCount += packet.length
+        flows[conversation]?.protocols.insert(packet.proto)
+        if Self.plaintextProtocols.contains(packet.proto) { flows[conversation]?.sawPlaintext = true }
+        if oriented.inboundInitiated { flows[conversation]?.inboundInitiated = true }
+    }
+
+    /// Which side is this Mac, and who opened the connection.
+    ///
+    /// Capture usually starts mid-conversation, so the first packet of a flow is
+    /// often a server reply. Treating packet order as initiation accused this Mac's
+    /// own DNS queries and QUIC streams of being inbound connections. Initiation now
+    /// needs evidence: a TCP SYN, or the port roles.
+    static func orient(
+        _ packet: CapturedPacket,
+        localAddresses: Set<String>
+    ) -> (key: FlowKey, direction: FlowDirection, inboundInitiated: Bool)? {
+        let isLocal: (String) -> Bool = { host in
+            !host.isEmpty && (localAddresses.contains(host) || host.hasPrefix("fe80"))
+        }
+        let sourceIsLocal = isLocal(packet.source)
+        let destinationIsLocal = isLocal(packet.destination)
+
+        let localHost: String
+        let localPort: UInt16
+        let remoteHost: String
+        let remotePort: UInt16
+        let baseDirection: FlowDirection
+
+        if sourceIsLocal && destinationIsLocal {
+            localHost = packet.source
+            localPort = packet.sourcePort
+            remoteHost = packet.destination
+            remotePort = packet.destinationPort
+            baseDirection = .loopback
+        } else if sourceIsLocal {
+            localHost = packet.source
+            localPort = packet.sourcePort
+            remoteHost = packet.destination
+            remotePort = packet.destinationPort
+            baseDirection = .outbound
+        } else if destinationIsLocal {
+            localHost = packet.destination
+            localPort = packet.destinationPort
+            remoteHost = packet.source
+            remotePort = packet.sourcePort
+            baseDirection = .inbound
         } else {
-            key = FlowKey(
-                transport: transport,
-                local: Endpoint(host: packet.source, port: packet.sourcePort),
-                remote: Endpoint(host: packet.destination, port: packet.destinationPort)
-            )
-            direction = .loopback
+            // A neighbour talking to a broadcast or group address. Neither end is
+            // this Mac, and the neighbour is the resource worth naming.
+            localHost = packet.destination
+            localPort = packet.destinationPort
+            remoteHost = packet.source
+            remotePort = packet.sourcePort
+            baseDirection = AddressScope.isMulticastOrBroadcast(packet.destination) ? .broadcast : .outbound
         }
 
-        if flows[key] == nil {
-            flows[key] = FlowAggregate(key: key, direction: direction, firstWasInbound: firstWasInbound)
+        guard !remoteHost.isEmpty, remotePort != 0 else { return nil }
+
+        let key = FlowKey(
+            transport: packet.transport,
+            local: Endpoint(host: localHost, port: localPort),
+            remote: Endpoint(host: remoteHost, port: remotePort)
+        )
+
+        if baseDirection == .loopback {
+            return (key, .loopback, false)
         }
-        flows[key]?.packetTimes.append(packet.time)
-        flows[key]?.byteCount += packet.length
-        flows[key]?.protocols.insert(packet.proto)
-        if Self.plaintextProtocols.contains(packet.proto) { flows[key]?.sawPlaintext = true }
+
+        let sawOpeningSYN = TCPFlags.synOnly(packet)
+        if sawOpeningSYN {
+            let inbound = !sourceIsLocal
+            return (key, inbound ? .inbound : .outbound, inbound)
+        }
+
+        // Without a handshake in view, the port roles decide. An ephemeral local
+        // port reaching a service port is a client, which is nearly every outbound
+        // connection and every DNS query and QUIC stream on this Mac.
+        let localIsService = isServicePort(localPort)
+        let remoteIsService = isServicePort(remotePort)
+        if remoteIsService && !localIsService {
+            return (key, .outbound, false)
+        }
+        if localIsService && !remoteIsService {
+            return (key, .inbound, true)
+        }
+        return (key, baseDirection, false)
+    }
+
+    private static let extraServicePorts: Set<UInt16> = [5223, 5228, 5353, 6679, 1900]
+
+    private static func isServicePort(_ port: UInt16) -> Bool {
+        port <= 1024 || extraServicePorts.contains(port)
     }
 
     private static let plaintextProtocols: Set<String> = [
@@ -215,9 +339,36 @@ final class SentinelModel: ObservableObject {
         }
     }
 
+    /// A conversation can hold several local ports over its life, and the one that
+    /// was open when it started is often closed by the time we look. Try the recent
+    /// ones before giving up.
+    nonisolated private static func attribute(
+        attributor: ProcessAttributor?,
+        aggregate: FlowAggregate,
+        remote: Endpoint,
+        listeners: Set<UInt16>
+    ) -> ProcessIdentity? {
+        guard let attributor else { return nil }
+        for port in aggregate.localPorts {
+            if let process = attributor.process(remote: remote, localPort: port, transport: aggregate.key.transport) {
+                return process
+            }
+        }
+        // Inbound traffic is owned by whoever listens, not by an ephemeral port.
+        if aggregate.key.direction == .inbound {
+            for port in listeners where port == remote.port {
+                return attributor.process(remote: remote, localPort: port, transport: aggregate.key.transport)
+            }
+        }
+        return nil
+    }
+
     private func reassess() async {
-        let snapshot = flows.map { key, aggregate in
-            (key: key, aggregate: aggregate, facts: dedupe(factsByHost[key.remoteEndpoint.host] ?? []))
+        let snapshot = flows.values.map { aggregate in
+            (
+                aggregate: aggregate,
+                facts: dedupe(factsByHost[aggregate.key.remoteHost] ?? [])
+            )
         }
         let listeners = await LocalListenerTable.current()
         let resolver = identity
@@ -230,13 +381,15 @@ final class SentinelModel: ObservableObject {
             attributor?.refresh()
             return snapshot.map { item in
                 var observation = item.aggregate.observation
-                observation.identity = resolver.identity(host: item.key.remoteEndpoint.host, facts: item.facts)
-                observation.process = attributor?.process(
-                    remote: item.key.remoteEndpoint,
-                    localPort: item.key.localEndpoint.port,
-                    transport: item.key.transport
+                let remote = item.aggregate.representative.remoteEndpoint
+                observation.identity = resolver.identity(host: item.aggregate.key.remoteHost, facts: item.facts)
+                observation.process = Self.attribute(
+                    attributor: attributor,
+                    aggregate: item.aggregate,
+                    remote: remote,
+                    listeners: listeners
                 )
-                observation.hasLocalListener = listeners.contains(item.key.localEndpoint.port)
+                observation.hasLocalListener = listeners.contains(observation.key.localEndpoint.port)
                 return engine.assess(observation)
             }
         }.value
