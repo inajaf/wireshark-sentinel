@@ -58,7 +58,7 @@ for line in md.splitlines():
     for address in re.findall(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", line):
         if is_public(address):
             public_seen.add(address)
-            if not re.search(r"Identified|Unidentified|Possibly spying|known|unknown|suspicious", line, re.I):
+            if not re.search(r"Possibly spying|Not sure yet|Identified", line, re.I):
                 failures.append(f"line names {address} with no verdict: {line.strip()[:120]}")
 
 if not public_seen:
