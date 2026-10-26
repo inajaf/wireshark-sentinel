@@ -39,3 +39,25 @@ GOAL: the four panes, the scanner and the report run as one live session against
 SCOPE: Sources/WiresharkSentinel/CaptureController.swift, scripts/verify-live.sh, README.md
 ACCEPTANCE: verify-live.sh exits 0 with a report carrying a verdict for every remote non-local endpoint
 VERIFY: bash scripts/verify-live.sh 20
+
+## Delivered, with the evidence that closed each unit
+
+| unit | test id | gate | result |
+|---|---|---|---|
+| engine-stream | task-1 | swift test --filter SentinelEngineTests | 13 tests, 1 skipped, 0 failures; live smoke 7534 packets on en0 |
+| identity-resolver | task-2 | swift test --filter SentinelIdentityTests | 9 tests, 0 failures |
+| process-attribution | task-3 | swift test --filter SentinelAttributionTests | 8 tests, 0 failures, incl. a real loopback socket attributed to the test pid |
+| suspicion-engine | task-4 | swift test --filter SentinelSuspicionTests | 17 tests, 0 failures, beaconing falsified by mutation |
+| report-writer | task-5 | swift test --filter SentinelReportTests | 9 tests, 0 failures, JSON contract exercised with the real consumer |
+| engine-flags | task-6 | swift test --filter SentinelEngineTests | 17 tests, 0 failures; flags proven on live en0 |
+| suspicion-accuracy | task-7 | swift test --filter SentinelSuspicionTests | 24 tests, 0 failures; router false accusations removed |
+| report-wording | task-8 | swift test --filter SentinelReportTests | 11 tests, 0 failures |
+| integration | lead | scripts/verify-live.sh 25 | PASS, 21 conversations, all carrying a verdict |
+| app-shell | lead | scripts/verify-ui.sh | PASS, four panes, 8489 packets, 1100x728 window |
+
+## Lead fixes inside the integration unit, each measured
+
+- Batched packet publishing: ingest went from 919 to 2135 packets against 2237 raw in the same window.
+- Direction from the TCP handshake and port roles, via engine task-6.
+- One conversation per connection: duplicate remote endpoints in the rendered report went from 7 to 0.
+- Local listener table populated so inbound-un solicited is not over-eager; parser verified equal to the lsof port set.
