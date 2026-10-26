@@ -64,12 +64,15 @@ def is_public(address):
     return not (parsed.is_private or parsed.is_loopback or parsed.is_multicast
                 or parsed.is_link_local or parsed.is_unspecified)
 
+# Only an endpoint of the form address:port counts. A reverse-DNS name can contain
+# four dot-separated numbers, and matching those produced a false failure.
 public_seen = set()
 for line in md.splitlines():
-    for address in re.findall(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", line):
+    for endpoint in re.findall(r"\b(?:\d{1,3}\.){3}\d{1,3}:\d+\b", line):
+        address = endpoint.rsplit(":", 1)[0]
         if is_public(address):
             public_seen.add(address)
-            if not re.search(r"Possibly spying|Not sure yet|Identified", line, re.I):
+            if not re.search(r"Possibly spying|Not sure yet|Expected", line, re.I):
                 failures.append(f"line names {address} with no verdict: {line.strip()[:120]}")
 
 if not public_seen:

@@ -49,6 +49,9 @@ PY
 done
 
 if [ -n "$WINDOW_ID" ]; then
+  # The window exists before any packet arrives. Let traffic accumulate so the
+  # screenshot shows a populated packet list rather than an empty one.
+  sleep 5
   screencapture -x -o -l "$WINDOW_ID" "$OUT/window.png" 2>/dev/null || true
   echo "captured window $WINDOW_ID"
 else
@@ -82,5 +85,8 @@ if missing:
 if data.get("windowWidth", 0) < 800 or data.get("windowHeight", 0) < 400:
     print("FAIL: window too small, the panes did not lay out")
     sys.exit(1)
-print("PASS: four panes rendered in a real window")
+if data.get("packets", 0) < 1:
+    print("FAIL: the panes rendered but no packet reached them")
+    sys.exit(1)
+print(f"PASS: four panes rendered in a real window showing {data['packets']} frames")
 PY
