@@ -9,7 +9,7 @@ import SentinelSuspicion
 import SentinelReport
 
 /// One conversation, accumulated as packets arrive.
-struct FlowAggregate {
+struct FlowAggregate: Sendable {
     var key: FlowKey
     var direction: FlowDirection
     var packetTimes: [Date]
@@ -216,20 +216,31 @@ final class SentinelModel: ObservableObject {
     }
 
     private func reassess() async {
-        await MainActor.run { self.attributor?.refresh() }
-        var results: [FlowAssessment] = []
-        for (key, aggregate) in flows {
-            var observation = aggregate.observation
-            let host = key.remoteEndpoint.host
-            let facts = dedupe(factsByHost[host] ?? [])
-            observation.identity = identity.identity(host: host, facts: facts)
-            observation.process = attributor?.process(
-                remote: key.remoteEndpoint,
-                localPort: key.localEndpoint.port,
-                transport: key.transport
-            )
-            results.append(suspicion.assess(observation))
+        let snapshot = flows.map { key, aggregate in
+            (key: key, aggregate: aggregate, facts: dedupe(factsByHost[key.remoteEndpoint.host] ?? []))
         }
+        let listeners = await LocalListenerTable.current()
+        let resolver = identity
+        let engine = suspicion
+        let attributor = self.attributor
+
+        // lsof and codesign take hundreds of milliseconds. Doing that on the main
+        // actor would stall the window every two seconds.
+        let results = await Task.detached(priority: .utility) { () -> [FlowAssessment] in
+            attributor?.refresh()
+            return snapshot.map { item in
+                var observation = item.aggregate.observation
+                observation.identity = resolver.identity(host: item.key.remoteEndpoint.host, facts: item.facts)
+                observation.process = attributor?.process(
+                    remote: item.key.remoteEndpoint,
+                    localPort: item.key.localEndpoint.port,
+                    transport: item.key.transport
+                )
+                observation.hasLocalListener = listeners.contains(item.key.localEndpoint.port)
+                return engine.assess(observation)
+            }
+        }.value
+
         assessments = results.sorted { lhs, rhs in
             if lhs.score != rhs.score { return lhs.score > rhs.score }
             return lhs.firstSeen < rhs.firstSeen

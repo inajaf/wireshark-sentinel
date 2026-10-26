@@ -39,6 +39,7 @@ struct CommandLineOptions {
     var selfTestPath: String?
     var seconds: TimeInterval = 15
     var interfaceID: String?
+    var checkListeners = false
 
     static func parse(_ args: [String]) -> CommandLineOptions {
         var options = CommandLineOptions()
@@ -51,6 +52,8 @@ struct CommandLineOptions {
                 if index + 1 < args.count, let value = Double(args[index + 1]) { options.seconds = value; index += 1 }
             case "--interface":
                 if index + 1 < args.count { options.interfaceID = args[index + 1]; index += 1 }
+            case "--check-listeners":
+                options.checkListeners = true
             default:
                 break
             }
@@ -64,6 +67,14 @@ struct CommandLineOptions {
 struct WiresharkSentinelApp: App {
     @StateObject private var model = SentinelModel()
     private let options = CommandLineOptions.parse(Array(CommandLine.arguments.dropFirst()))
+
+    init() {
+        let options = CommandLineOptions.parse(Array(CommandLine.arguments.dropFirst()))
+        if options.checkListeners {
+            print(LocalListenerTable.snapshot().sorted().map(String.init).joined(separator: " "))
+            exit(0)
+        }
+    }
 
     var body: some Scene {
         WindowGroup("Wireshark Sentinel") {
