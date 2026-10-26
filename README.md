@@ -65,10 +65,16 @@ For every remote resource:
   connections are called out, because a connection you did not open is the interesting case.
 - **Which program.** The local process that owns the socket, with its pid and its code signing
   status. An unsigned or ad-hoc-signed program reaching out is called out on its own.
-- **Whether it is expected.** Weighted signals become one of three verdicts: Identified, Not sure
+- **Whether it is expected.** Weighted signals become one of three verdicts: Expected, Not sure
   yet, or Possibly spying. Every verdict carries the sentence that produced it.
 
-What a 25 second capture on this Mac actually produced: 21 conversations, 15 identified, 5 it was
+A name comes only from evidence: the TLS server name, the HTTP host header, a DNS question, reverse
+DNS, or a certificate subject. Every name line says where it came from. A port number is never used
+as a name. When the only thing known is the port, the report says so plainly: `unidentified, port 443
+looks like https`. That distinction is the whole point, because "Google" guessed from a port number
+is an accusation, not a fact.
+
+What a 25 second capture on this Mac actually produced: 21 conversations, 15 expected, 5 it was
 not sure about, and 1 worth a look. The identified ones carried real names and owners, such as
 `172.217.16.142:443 (lcsofb-ac-in-f14.1e100.net)` opened by `Google Chrome Helper`, and
 `17.248.211.20:443 (gateway.icloud.com)` opened by `cloudd`, signed by Apple. The uncertain ones were
