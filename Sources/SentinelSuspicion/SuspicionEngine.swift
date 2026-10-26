@@ -108,7 +108,7 @@ public struct SuspicionEngine: Sendable {
             ))
         }
 
-        if !Self.wellKnownPorts.contains(observation.servicePort) {
+        if !observation.isGroupDestination, !Self.wellKnownPorts.contains(observation.servicePort) {
             let side = observation.direction == .inbound ? "local" : "remote"
             fired.append(makeSignal(
                 .unusualPort,
@@ -141,7 +141,7 @@ public struct SuspicionEngine: Sendable {
             ))
         }
 
-        if Self.isTransportOnly(protocols, port: observation.servicePort) {
+        if !observation.isGroupDestination, Self.isTransportOnly(protocols, port: observation.servicePort) {
             fired.append(makeSignal(
                 .rawIPTraffic,
                 detail: "It carries raw \(protocols.sorted().joined(separator: " or ")) with no recognised application protocol.",
@@ -282,6 +282,15 @@ private extension FlowObservation {
 
     /// A private, loopback, broadcast or multicast destination is not a remote resource under
     /// investigation, so not knowing its name says nothing about the machine.
+    /// True for a neighbour broadcasting or multicasting. Such a conversation is not
+    /// a service connection, so port and protocol shape rules do not apply to it.
+    var isGroupDestination: Bool {
+        switch direction {
+        case .broadcast, .multicast: return true
+        case .inbound, .outbound, .loopback: return false
+        }
+    }
+
     var hasNonPublicDestination: Bool {
         let host = key.remote.host
         if AddressScope.isPrivate(host) || AddressScope.isMulticastOrBroadcast(host) { return true }

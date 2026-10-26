@@ -111,9 +111,9 @@ final class SentinelIdentityTests: XCTestCase {
         let catalog = ServiceCatalog.builtIn
         let ports: [(UInt16, TransportProtocol, String)] = [
             (443, .tcp, "https"), (80, .tcp, "http"), (53, .udp, "domain"), (123, .udp, "ntp"),
-            (5223, .tcp, "APNs"), (5353, .udp, "mdns"), (67, .udp, "dhcp"), (68, .udp, "dhcp"),
+            (5223, .tcp, "apns"), (5353, .udp, "mdns"), (67, .udp, "dhcp"), (68, .udp, "dhcp"),
             (22, .tcp, "ssh"), (25, .tcp, "smtp"), (587, .tcp, "submission"), (993, .tcp, "imaps"),
-            (6679, .tcp, "Google"), (5228, .tcp, "Google"),
+            (6679, .tcp, "google-quic"), (5228, .tcp, "google-play"),
         ]
         for (port, transport, name) in ports {
             XCTAssertEqual(catalog.service(forPort: port, transport: transport), name, "port \(port)")

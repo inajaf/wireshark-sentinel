@@ -31,9 +31,9 @@ public struct ServiceCatalog: Sendable {
         25: "smtp",
         587: "submission",
         993: "imaps",
-        5223: "APNs",
-        5228: "Google",
-        6679: "Google",
+        5223: "apns",
+        5228: "google-play",
+        6679: "google-quic",
     ]
 
     private static let udpServices: [UInt16: String] = [

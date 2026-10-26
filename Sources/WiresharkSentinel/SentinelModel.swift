@@ -295,7 +295,9 @@ final class SentinelModel: ObservableObject {
             localHost = packet.destination
             localPort = packet.destinationPort
             remoteHost = packet.source
-            remotePort = packet.sourcePort
+            // The port a broadcaster is addressing is the service; its own source
+            // port is ephemeral and says nothing about what it is talking to.
+            remotePort = packet.destinationPort
             baseDirection = AddressScope.isMulticastOrBroadcast(packet.destination) ? .broadcast : .outbound
         }
 
