@@ -89,7 +89,7 @@ extension SentinelReport {
     func verdictWord(_ verdict: Verdict) -> String {
         switch verdict {
         case .known: return "Identified"
-        case .unknown: return "Unidentified"
+        case .unknown: return "Not sure yet"
         case .suspicious: return "Possibly spying"
         }
     }

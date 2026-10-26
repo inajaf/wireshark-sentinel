@@ -12,7 +12,7 @@ final class SentinelReportTests: XCTestCase {
         XCTAssertLessThan(suspicious.lowerBound, unknown.lowerBound)
         XCTAssertFalse(attention.contains("142.250.185.78"))
         XCTAssertTrue(attention.contains("Possibly spying"))
-        XCTAssertTrue(attention.contains("Unidentified"))
+        XCTAssertTrue(attention.contains("Not sure yet"))
     }
 
     func testEveryLineNamingAHostCarriesAVerdictWord() {
@@ -22,7 +22,7 @@ final class SentinelReportTests: XCTestCase {
             rationale: "Not sure about this connection because nothing names 93.184.216.35."
         )
         let markdown = report([knownAssessment, unknownAssessment, suspiciousAssessment, noisy]).render(.markdown)
-        let words = ["Identified", "Unidentified", "Possibly spying"]
+        let words = ["Identified", "Not sure yet", "Possibly spying"]
         var checked = 0
         for line in markdown.split(separator: "\n")
         where line.range(of: #"\d{1,3}(\.\d{1,3}){3}"#, options: .regularExpression) != nil {
@@ -89,8 +89,29 @@ final class SentinelReportTests: XCTestCase {
         }
 
         let markdown = report([unknownAssessment]).render(.markdown)
-        XCTAssertTrue(markdown.contains("unidentified"))
+        XCTAssertTrue(markdown.contains("- Name: unidentified"))
         XCTAssertTrue(markdown.contains("We could not identify who this destination belongs to."))
+    }
+
+    func testUnknownVerdictHeaderDoesNotContradictANamedResource() throws {
+        let named = makeAssessment(
+            host: "17.248.211.70", port: 443, verdict: .unknown, score: 25,
+            name: "https", source: .serviceCatalog,
+            signals: [Signal(kind: .plaintextProtocol, weight: 25, detail: "It sends data without encryption.")]
+        )
+        let markdown = report([named]).render(.markdown)
+        XCTAssertTrue(markdown.contains("### Not sure yet: 17.248.211.70:443"))
+        XCTAssertTrue(markdown.contains("- Name: https"))
+        for line in markdown.split(separator: "\n") where line.hasPrefix("### ") {
+            XCTAssertFalse(line.contains("Unidentified"), "a header must not deny a name the report then prints: \(line)")
+        }
+    }
+
+    func testEachVerdictPrintsItsOwnHeaderWord() throws {
+        let markdown = report([knownAssessment, unknownAssessment, suspiciousAssessment]).render(.markdown)
+        XCTAssertTrue(markdown.contains("### Possibly spying: 93.184.216.34:443"))
+        XCTAssertTrue(markdown.contains("### Not sure yet: 203.0.113.9:8443"))
+        XCTAssertTrue(markdown.contains("- Identified: 142.250.185.78:443 (google.com)"))
     }
 
     func testJSONSortsByScoreThenFirstSeen() throws {
@@ -166,6 +187,7 @@ private func makeAssessment(
     verdict: Verdict,
     score: Int,
     name: String? = nil,
+    source: IdentitySource = .ptr,
     confidence: Confidence = .observed,
     process: ProcessIdentity? = nil,
     signals: [Signal] = [],
@@ -174,7 +196,7 @@ private func makeAssessment(
     packetCount: Int = 4,
     byteCount: Int = 400
 ) -> FlowAssessment {
-    let facts = name.map { [IdentityFact(value: $0, source: .ptr, confidence: confidence)] } ?? []
+    let facts = name.map { [IdentityFact(value: $0, source: source, confidence: confidence)] } ?? []
     let identity = EndpointIdentity(
         facts: facts, firstSeen: firstSeen, lastSeen: firstSeen,
         packetCount: packetCount, byteCount: byteCount
