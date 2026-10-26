@@ -1,0 +1,382 @@
+[
+  {
+    "_index": "packets-2026-10-27",
+    "_score": null,
+    "_source": {
+      "layers": {
+        "frame": {
+          "frame.section_number": "1",
+          "frame.interface_id": "0",
+          "frame.interface_id_tree": {
+            "frame.interface_name": "en0",
+            "frame.interface_description": "Wi-Fi"
+          },
+          "frame.encap_type": "1",
+          "frame.time": "2026-10-26T22:09:20.863822000Z",
+          "frame.time_utc": "2026-10-26T22:09:20.863822000Z",
+          "frame.time_epoch": "2026-10-26T22:09:20.863822000Z",
+          "frame.offset_shift": "0.000000000",
+          "frame.time_delta": "0.003222000",
+          "frame.time_relative": "0.018408000",
+          "frame.number": "5",
+          "frame.len": "387",
+          "frame.cap_len": "387",
+          "frame.marked": "0",
+          "frame.ignored": "0",
+          "frame.protocols": "eth:ethertype:ip:tcp:tls",
+          "frame.encoding": "0"
+        },
+        "eth": {
+          "eth.dst": "f8:22:29:8c:10:40",
+          "eth.dst_tree": {
+            "eth.dst_resolved": "NokiaShangha_8c:10:40",
+            "eth.dst.oui": "16261673",
+            "eth.dst.oui_resolved": "Nokia Shanghai Bell Co., Ltd.",
+            "eth.dst.lg": "0",
+            "eth.dst.ig": "0",
+            "eth.addr": "f8:22:29:8c:10:40",
+            "eth.addr_resolved": "NokiaShangha_8c:10:40",
+            "eth.addr.oui": "16261673",
+            "eth.addr.oui_resolved": "Nokia Shanghai Bell Co., Ltd.",
+            "eth.lg": "0",
+            "eth.ig": "0"
+          },
+          "eth.src": "0a:0a:83:83:a3:a3",
+          "eth.src_tree": {
+            "eth.src_resolved": "0a:0a:83:83:a3:a3",
+            "eth.src.oui": "658051",
+            "eth.src.lg": "1",
+            "eth.src.ig": "0",
+            "eth.addr": "0a:0a:83:83:a3:a3",
+            "eth.addr_resolved": "0a:0a:83:83:a3:a3",
+            "eth.addr.oui": "658051",
+            "eth.lg": "1",
+            "eth.ig": "0"
+          },
+          "eth.type": "0x0800",
+          "eth.stream": "0"
+        },
+        "ip": {
+          "ip.version": "4",
+          "ip.hdr_len": "20",
+          "ip.dsfield": "0x02",
+          "ip.dsfield_tree": {
+            "ip.dsfield.dscp": "0",
+            "ip.dsfield.ecn": "2"
+          },
+          "ip.len": "373",
+          "ip.id": "0x0000",
+          "ip.flags": "0x02",
+          "ip.flags_tree": {
+            "ip.flags.rb": "0",
+            "ip.flags.df": "1",
+            "ip.flags.mf": "0"
+          },
+          "ip.frag_offset": "0",
+          "ip.ttl": "64",
+          "ip.proto": "6",
+          "ip.checksum": "0xf7da",
+          "ip.checksum.status": "2",
+          "ip.src": "192.168.1.80",
+          "ip.addr": "192.168.1.80",
+          "ip.src_host": "192.168.1.80",
+          "ip.host": "192.168.1.80",
+          "ip.dst": "104.20.23.154",
+          "ip.addr": "104.20.23.154",
+          "ip.dst_host": "104.20.23.154",
+          "ip.host": "104.20.23.154",
+          "ip.stream": "1"
+        },
+        "tcp": {
+          "tcp.srcport": "53341",
+          "tcp.dstport": "443",
+          "tcp.port": "53341",
+          "tcp.port": "443",
+          "tcp.stream": "0",
+          "tcp.stream.pnum": "3",
+          "tcp.completeness": "3",
+          "tcp.completeness_tree": {
+            "tcp.completeness.rst": "0",
+            "tcp.completeness.fin": "0",
+            "tcp.completeness.data": "0",
+            "tcp.completeness.ack": "0",
+            "tcp.completeness.syn-ack": "1",
+            "tcp.completeness.syn": "1",
+            "tcp.completeness.str": "····SS"
+          },
+          "tcp.len": "321",
+          "tcp.seq": "1",
+          "tcp.seq_raw": "1206439218",
+          "tcp.nxtseq": "322",
+          "tcp.ack": "1",
+          "tcp.ack_raw": "4079404163",
+          "tcp.hdr_len": "32",
+          "tcp.flags": "0x0018",
+          "tcp.flags_tree": {
+            "tcp.flags.res": "0",
+            "tcp.flags.ae": "0",
+            "tcp.flags.cwr": "0",
+            "tcp.flags.ece": "0",
+            "tcp.flags.urg": "0",
+            "tcp.flags.ack": "1",
+            "tcp.flags.push": "1",
+            "tcp.flags.reset": "0",
+            "tcp.flags.syn": "0",
+            "tcp.flags.fin": "0",
+            "tcp.flags.str": "·······AP···"
+          },
+          "tcp.window_size_value": "2061",
+          "tcp.window_size": "131904",
+          "tcp.window_size_scalefactor": "64",
+          "tcp.checksum": "0x2f9c",
+          "tcp.checksum.status": "2",
+          "tcp.urgent_pointer": "0",
+          "tcp.options": "01:01:08:0a:c9:60:33:ae:03:13:46:ad",
+          "tcp.options_tree": {
+            "tcp.options.nop": "01",
+            "tcp.options.nop_tree": {
+              "tcp.option_kind": "1"
+            },
+            "tcp.options.nop": "01",
+            "tcp.options.nop_tree": {
+              "tcp.option_kind": "1"
+            },
+            "tcp.options.timestamp": "08:0a:c9:60:33:ae:03:13:46:ad",
+            "tcp.options.timestamp_tree": {
+              "tcp.option_kind": "8",
+              "tcp.option_len": "10",
+              "tcp.options.timestamp.tsval": "3378525102",
+              "tcp.options.timestamp.tsecr": "51594925"
+            }
+          },
+          "Timestamps": {
+            "tcp.time_relative": "0.009124000",
+            "tcp.time_delta": "0.003222000"
+          },
+          "tcp.analysis": {
+            "tcp.analysis.acks_frame": "4",
+            "tcp.analysis.ack_rtt": "0.003222000",
+            "tcp.analysis.initial_rtt": "0.009124000",
+            "tcp.analysis.bytes_in_flight": "321",
+            "tcp.analysis.push_bytes_sent": "321"
+          },
+          "tcp.stream.client.contiguity_count": "1",
+          "tcp.stream.server.contiguity_count": "1",
+          "tcp.payload": "16:03:01:01:3c:01:00:01:38:03:03:9e:9e:cd:73:30:ec:fe:d6:30:f1:34:37:bb:8b:19:3d:c0:ca:55:71:44:93:ca:b2:94:53:68:1a:b5:8f:27:d4:20:19:2e:ad:ed:15:79:74:a9:6d:d2:d3:7a:a9:88:aa:bc:21:bd:4d:8b:0c:34:26:8f:be:b5:70:46:fc:9a:ff:60:00:62:13:03:13:02:13:01:cc:a9:cc:a8:cc:aa:c0:30:c0:2c:c0:28:c0:24:c0:14:c0:0a:00:9f:00:6b:00:39:ff:85:00:c4:00:88:00:81:00:9d:00:3d:00:35:00:c0:00:84:c0:2f:c0:2b:c0:27:c0:23:c0:13:c0:09:00:9e:00:67:00:33:00:be:00:45:00:9c:00:3c:00:2f:00:ba:00:41:c0:11:c0:07:00:05:00:04:c0:12:c0:08:00:16:00:0a:00:ff:01:00:00:8d:00:2b:00:09:08:03:04:03:03:03:02:03:01:00:33:00:26:00:24:00:1d:00:20:66:d3:ba:cf:31:ef:3d:98:24:ec:6b:73:c0:24:fb:4e:36:d8:65:90:69:0d:57:3b:0e:3d:bf:f4:40:95:6f:75:00:00:00:10:00:0e:00:00:0b:65:78:61:6d:70:6c:65:2e:63:6f:6d:00:0b:00:02:01:00:00:0a:00:0a:00:08:00:1d:00:17:00:18:00:19:00:0d:00:18:00:16:08:06:06:01:06:03:08:05:05:01:05:03:08:04:04:01:04:03:02:01:02:03:00:10:00:0e:00:0c:02:68:32:08:68:74:74:70:2f:31:2e:31"
+        },
+        "tls": {
+          "tls.stream": "0",
+          "tls.record": {
+            "tls.record.content_type": "22",
+            "tls.record.version": "0x0301",
+            "tls.record.length": "316",
+            "tls.handshake": {
+              "tls.handshake.type": "1",
+              "tls.handshake.length": "312",
+              "tls.handshake.version": "0x0303",
+              "tls.handshake.version_tree": {
+                "_ws.expert": {
+                  "tls.handshake.legacy_version": "",
+                  "_ws.expert.message": "This legacy_version field MUST be ignored. The supported_versions extension is present and MUST be used instead.",
+                  "_ws.expert.severity": "2097152",
+                  "_ws.expert.group": "234881024"
+                }
+              },
+              "tls.handshake.random": "9e:9e:cd:73:30:ec:fe:d6:30:f1:34:37:bb:8b:19:3d:c0:ca:55:71:44:93:ca:b2:94:53:68:1a:b5:8f:27:d4",
+              "tls.handshake.random_tree": {
+                "tls.handshake.random_time": "2054-05-01T00:16:51.000000000Z",
+                "tls.handshake.random_bytes": "30:ec:fe:d6:30:f1:34:37:bb:8b:19:3d:c0:ca:55:71:44:93:ca:b2:94:53:68:1a:b5:8f:27:d4"
+              },
+              "tls.handshake.session_id_length": "32",
+              "tls.handshake.session_id": "19:2e:ad:ed:15:79:74:a9:6d:d2:d3:7a:a9:88:aa:bc:21:bd:4d:8b:0c:34:26:8f:be:b5:70:46:fc:9a:ff:60",
+              "tls.handshake.cipher_suites_length": "98",
+              "tls.handshake.ciphersuites": {
+                "tls.handshake.ciphersuite": "0x1303",
+                "tls.handshake.ciphersuite": "0x1302",
+                "tls.handshake.ciphersuite": "0x1301",
+                "tls.handshake.ciphersuite": "0xcca9",
+                "tls.handshake.ciphersuite": "0xcca8",
+                "tls.handshake.ciphersuite": "0xccaa",
+                "tls.handshake.ciphersuite": "0xc030",
+                "tls.handshake.ciphersuite": "0xc02c",
+                "tls.handshake.ciphersuite": "0xc028",
+                "tls.handshake.ciphersuite": "0xc024",
+                "tls.handshake.ciphersuite": "0xc014",
+                "tls.handshake.ciphersuite": "0xc00a",
+                "tls.handshake.ciphersuite": "0x009f",
+                "tls.handshake.ciphersuite": "0x006b",
+                "tls.handshake.ciphersuite": "0x0039",
+                "tls.handshake.ciphersuite": "0xff85",
+                "tls.handshake.ciphersuite": "0x00c4",
+                "tls.handshake.ciphersuite": "0x0088",
+                "tls.handshake.ciphersuite": "0x0081",
+                "tls.handshake.ciphersuite": "0x009d",
+                "tls.handshake.ciphersuite": "0x003d",
+                "tls.handshake.ciphersuite": "0x0035",
+                "tls.handshake.ciphersuite": "0x00c0",
+                "tls.handshake.ciphersuite": "0x0084",
+                "tls.handshake.ciphersuite": "0xc02f",
+                "tls.handshake.ciphersuite": "0xc02b",
+                "tls.handshake.ciphersuite": "0xc027",
+                "tls.handshake.ciphersuite": "0xc023",
+                "tls.handshake.ciphersuite": "0xc013",
+                "tls.handshake.ciphersuite": "0xc009",
+                "tls.handshake.ciphersuite": "0x009e",
+                "tls.handshake.ciphersuite": "0x0067",
+                "tls.handshake.ciphersuite": "0x0033",
+                "tls.handshake.ciphersuite": "0x00be",
+                "tls.handshake.ciphersuite": "0x0045",
+                "tls.handshake.ciphersuite": "0x009c",
+                "tls.handshake.ciphersuite": "0x003c",
+                "tls.handshake.ciphersuite": "0x002f",
+                "tls.handshake.ciphersuite": "0x00ba",
+                "tls.handshake.ciphersuite": "0x0041",
+                "tls.handshake.ciphersuite": "0xc011",
+                "tls.handshake.ciphersuite": "0xc007",
+                "tls.handshake.ciphersuite": "0x0005",
+                "tls.handshake.ciphersuite": "0x0004",
+                "tls.handshake.ciphersuite": "0xc012",
+                "tls.handshake.ciphersuite": "0xc008",
+                "tls.handshake.ciphersuite": "0x0016",
+                "tls.handshake.ciphersuite": "0x000a",
+                "tls.handshake.ciphersuite": "0x00ff"
+              },
+              "tls.handshake.comp_methods_length": "1",
+              "tls.handshake.comp_methods": {
+                "tls.handshake.comp_method": "0"
+              },
+              "tls.handshake.extensions_length": "141",
+              "tls.handshake.extension": {
+                "tls.handshake.extension.type": "43",
+                "tls.handshake.extension.len": "9",
+                "tls.handshake.extensions.supported_versions_len": "8",
+                "tls.handshake.extensions.supported_version": "0x0304",
+                "tls.handshake.extensions.supported_version": "0x0303",
+                "tls.handshake.extensions.supported_version": "0x0302",
+                "tls.handshake.extensions.supported_version": "0x0301"
+              },
+              "tls.handshake.extension": {
+                "tls.handshake.extension.type": "51",
+                "tls.handshake.extension.len": "38",
+                "Key Share extension": {
+                  "tls.handshake.extensions_key_share_client_length": "36",
+                  "Key Share Entry: Group: x25519, Key Exchange length: 32": {
+                    "tls.handshake.extensions_key_share_group": "29",
+                    "tls.handshake.extensions_key_share_key_exchange_length": "32",
+                    "tls.handshake.extensions_key_share_key_exchange": "66:d3:ba:cf:31:ef:3d:98:24:ec:6b:73:c0:24:fb:4e:36:d8:65:90:69:0d:57:3b:0e:3d:bf:f4:40:95:6f:75"
+                  }
+                }
+              },
+              "tls.handshake.extension": {
+                "tls.handshake.extension.type": "0",
+                "tls.handshake.extension.len": "16",
+                "Server Name Indication extension": {
+                  "tls.handshake.extensions_server_name_list_len": "14",
+                  "tls.handshake.extensions_server_name_type": "0",
+                  "tls.handshake.extensions_server_name_len": "11",
+                  "tls.handshake.extensions_server_name": "example.com"
+                }
+              },
+              "tls.handshake.extension": {
+                "tls.handshake.extension.type": "11",
+                "tls.handshake.extension.len": "2",
+                "tls.handshake.extensions_ec_point_formats_length": "1",
+                "tls.handshake.extensions_ec_point_formats": {
+                  "tls.handshake.extensions_ec_point_format": "0"
+                }
+              },
+              "tls.handshake.extension": {
+                "tls.handshake.extension.type": "10",
+                "tls.handshake.extension.len": "10",
+                "tls.handshake.extensions_supported_groups_length": "8",
+                "tls.handshake.extensions_supported_groups": {
+                  "tls.handshake.extensions_supported_group": "0x001d",
+                  "tls.handshake.extensions_supported_group": "0x0017",
+                  "tls.handshake.extensions_supported_group": "0x0018",
+                  "tls.handshake.extensions_supported_group": "0x0019"
+                }
+              },
+              "tls.handshake.extension": {
+                "tls.handshake.extension.type": "13",
+                "tls.handshake.extension.len": "24",
+                "tls.handshake.sig_hash_alg_len": "22",
+                "tls.handshake.sig_hash_algs": {
+                  "tls.handshake.sig_hash_alg": "0x0806",
+                  "tls.handshake.sig_hash_alg_tree": {
+                    "tls.handshake.sig_hash_hash": "8",
+                    "tls.handshake.sig_hash_sig": "6"
+                  },
+                  "tls.handshake.sig_hash_alg": "0x0601",
+                  "tls.handshake.sig_hash_alg_tree": {
+                    "tls.handshake.sig_hash_hash": "6",
+                    "tls.handshake.sig_hash_sig": "1"
+                  },
+                  "tls.handshake.sig_hash_alg": "0x0603",
+                  "tls.handshake.sig_hash_alg_tree": {
+                    "tls.handshake.sig_hash_hash": "6",
+                    "tls.handshake.sig_hash_sig": "3"
+                  },
+                  "tls.handshake.sig_hash_alg": "0x0805",
+                  "tls.handshake.sig_hash_alg_tree": {
+                    "tls.handshake.sig_hash_hash": "8",
+                    "tls.handshake.sig_hash_sig": "5"
+                  },
+                  "tls.handshake.sig_hash_alg": "0x0501",
+                  "tls.handshake.sig_hash_alg_tree": {
+                    "tls.handshake.sig_hash_hash": "5",
+                    "tls.handshake.sig_hash_sig": "1"
+                  },
+                  "tls.handshake.sig_hash_alg": "0x0503",
+                  "tls.handshake.sig_hash_alg_tree": {
+                    "tls.handshake.sig_hash_hash": "5",
+                    "tls.handshake.sig_hash_sig": "3"
+                  },
+                  "tls.handshake.sig_hash_alg": "0x0804",
+                  "tls.handshake.sig_hash_alg_tree": {
+                    "tls.handshake.sig_hash_hash": "8",
+                    "tls.handshake.sig_hash_sig": "4"
+                  },
+                  "tls.handshake.sig_hash_alg": "0x0401",
+                  "tls.handshake.sig_hash_alg_tree": {
+                    "tls.handshake.sig_hash_hash": "4",
+                    "tls.handshake.sig_hash_sig": "1"
+                  },
+                  "tls.handshake.sig_hash_alg": "0x0403",
+                  "tls.handshake.sig_hash_alg_tree": {
+                    "tls.handshake.sig_hash_hash": "4",
+                    "tls.handshake.sig_hash_sig": "3"
+                  },
+                  "tls.handshake.sig_hash_alg": "0x0201",
+                  "tls.handshake.sig_hash_alg_tree": {
+                    "tls.handshake.sig_hash_hash": "2",
+                    "tls.handshake.sig_hash_sig": "1"
+                  },
+                  "tls.handshake.sig_hash_alg": "0x0203",
+                  "tls.handshake.sig_hash_alg_tree": {
+                    "tls.handshake.sig_hash_hash": "2",
+                    "tls.handshake.sig_hash_sig": "3"
+                  }
+                }
+              },
+              "tls.handshake.extension": {
+                "tls.handshake.extension.type": "16",
+                "tls.handshake.extension.len": "14",
+                "tls.handshake.extensions_alpn_len": "12",
+                "tls.handshake.extensions_alpn_list": {
+                  "tls.handshake.extensions_alpn_str_len": "2",
+                  "tls.handshake.extensions_alpn_str": "h2",
+                  "tls.handshake.extensions_alpn_str_len": "8",
+                  "tls.handshake.extensions_alpn_str": "http/1.1"
+                }
+              },
+              "tls.handshake.ja4": "t13d4907h2_0d8feac7bc37_7395dae3b2f3",
+              "tls.handshake.ja4_r": "t13d4907h2_0004,0005,000a,0016,002f,0033,0035,0039,003c,003d,0041,0045,0067,006b,0081,0084,0088,009c,009d,009e,009f,00ba,00be,00c0,00c4,00ff,1301,1302,1303,c007,c008,c009,c00a,c011,c012,c013,c014,c023,c024,c027,c028,c02b,c02c,c02f,c030,cca8,cca9,ccaa,ff85_000a,000b,000d,002b,0033_0806,0601,0603,0805,0501,0503,0804,0401,0403,0201,0203",
+              "tls.handshake.ja3_full": "771,4867-4866-4865-52393-52392-52394-49200-49196-49192-49188-49172-49162-159-107-57-65413-196-136-129-157-61-53-192-132-49199-49195-49191-49187-49171-49161-158-103-51-190-69-156-60-47-186-65-49169-49159-5-4-49170-49160-22-10-255,43-51-0-11-10-13-16,29-23-24-25,0",
+              "tls.handshake.ja3": "375c6162a492dfbf2795909110ce8424"
+            }
+          }
+        }
+      }
+    }
+  }
+]
