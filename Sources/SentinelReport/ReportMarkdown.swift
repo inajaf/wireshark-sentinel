@@ -47,10 +47,14 @@ extension SentinelReport {
         let word = verdictWord(assessment.verdict)
         var lines = ["### \(word): \(endpoint(of: assessment))"]
         if let name = name(of: assessment.identity) {
-            lines.append(tag("- Name: \(name)", hosts: hosts, word: word))
+            let source = nameSource(of: assessment.identity).map { " (from \(sourceWord($0)))" } ?? ""
+            lines.append(tag("- Name: \(name)\(source)", hosts: hosts, word: word))
         } else {
             lines.append(tag("- Name: unidentified", hosts: hosts, word: word))
             lines.append(tag("- Reason: \(unidentifiedReason(assessment))", hosts: hosts, word: word))
+        }
+        if let service = serviceLabel(of: assessment.identity) {
+            lines.append(tag("- Service: \(service) (guessed from the port number, not a name)", hosts: hosts, word: word))
         }
         lines.append(tag("- Process: \(processText(assessment.process))", hosts: hosts, word: word))
         lines.append(tag("- Signals: \(signalTitles(assessment.signals))", hosts: hosts, word: word))
@@ -61,9 +65,26 @@ extension SentinelReport {
 
     private func knownLine(_ assessment: FlowAssessment, hosts: Set<String>) -> String {
         let word = verdictWord(assessment.verdict)
-        let name = name(of: assessment.identity) ?? "unidentified"
-        let text = "- \(word): \(endpoint(of: assessment)) (\(name)). Process: \(processText(assessment.process))."
+        let name = name(of: assessment.identity)
+        let descriptor = name ?? "unidentified"
+        let service = serviceLabel(of: assessment.identity).map { ", port \(assessment.key.remote.port) looks like \($0)" } ?? ""
+        let text = "- \(word): \(endpoint(of: assessment)) (\(descriptor)\(service)). Process: \(processText(assessment.process))."
         return tag(text, hosts: hosts, word: word)
+    }
+
+    private func sourceWord(_ source: IdentitySource) -> String {
+        switch source {
+        case .sni: return "the TLS server name"
+        case .httpHost: return "the HTTP host header"
+        case .dnsQuery: return "a DNS query"
+        case .ptr: return "reverse DNS"
+        case .tlsSubject: return "the certificate subject"
+        case .tlsIssuer: return "the certificate issuer"
+        case .serviceCatalog, .portTable: return "the port number"
+        case .userAgent: return "the user agent"
+        case .localAddress: return "a local address"
+        case .manual: return "you"
+        }
     }
 
     /// Every line that names a remote host has to carry a verdict word, wherever the host came from.

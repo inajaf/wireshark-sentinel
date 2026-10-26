@@ -48,6 +48,13 @@ extension SentinelReport {
             "byteCount": assessment.byteCount,
             "rationale": assessment.rationale,
         ]
+        if let service = serviceLabel(of: assessment.identity) {
+            object["service"] = service
+            object["serviceSource"] = "portTable"
+        }
+        if let source = nameSource(of: assessment.identity) {
+            object["nameSource"] = source.rawValue
+        }
         if let displayName {
             object["name"] = displayName
         } else {

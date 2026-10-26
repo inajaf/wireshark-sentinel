@@ -22,7 +22,7 @@ final class SentinelReportTests: XCTestCase {
             rationale: "Not sure about this connection because nothing names 93.184.216.35."
         )
         let markdown = report([knownAssessment, unknownAssessment, suspiciousAssessment, noisy]).render(.markdown)
-        let words = ["Identified", "Not sure yet", "Possibly spying"]
+        let words = ["Expected", "Not sure yet", "Possibly spying"]
         var checked = 0
         for line in markdown.split(separator: "\n")
         where line.range(of: #"\d{1,3}(\.\d{1,3}){3}"#, options: .regularExpression) != nil {
@@ -48,10 +48,14 @@ final class SentinelReportTests: XCTestCase {
 
         let conversations = try XCTUnwrap(object["conversations"] as? [[String: Any]])
         XCTAssertEqual(conversations.count, 3)
-        XCTAssertEqual(Set(conversations[0].keys), [
+        let required: Set<String> = [
             "endpoint", "host", "transport", "direction", "verdict", "name", "identified",
             "process", "signals", "score", "packetCount", "byteCount", "rationale",
-        ])
+        ]
+        let provenance: Set<String> = ["nameSource", "service", "serviceSource"]
+        let keys = Set(conversations[0].keys)
+        XCTAssertTrue(required.isSubset(of: keys), "contract keys missing: \(required.subtracting(keys))")
+        XCTAssertTrue(keys.isSubset(of: required.union(provenance)), "undeclared keys: \(keys.subtracting(required.union(provenance)))")
         XCTAssertEqual(conversations[0]["endpoint"] as? String, "93.184.216.34:443")
         XCTAssertEqual(conversations[0]["host"] as? String, "93.184.216.34")
         XCTAssertEqual(conversations[0]["transport"] as? String, "tcp")
@@ -96,12 +100,12 @@ final class SentinelReportTests: XCTestCase {
     func testUnknownVerdictHeaderDoesNotContradictANamedResource() throws {
         let named = makeAssessment(
             host: "17.248.211.70", port: 443, verdict: .unknown, score: 25,
-            name: "https", source: .serviceCatalog,
+            name: "cdn.example.net", source: .ptr,
             signals: [Signal(kind: .plaintextProtocol, weight: 25, detail: "It sends data without encryption.")]
         )
         let markdown = report([named]).render(.markdown)
         XCTAssertTrue(markdown.contains("### Not sure yet: 17.248.211.70:443"))
-        XCTAssertTrue(markdown.contains("- Name: https"))
+        XCTAssertTrue(markdown.contains("- Name: cdn.example.net"))
         for line in markdown.split(separator: "\n") where line.hasPrefix("### ") {
             XCTAssertFalse(line.contains("Unidentified"), "a header must not deny a name the report then prints: \(line)")
         }
@@ -111,7 +115,7 @@ final class SentinelReportTests: XCTestCase {
         let markdown = report([knownAssessment, unknownAssessment, suspiciousAssessment]).render(.markdown)
         XCTAssertTrue(markdown.contains("### Possibly spying: 93.184.216.34:443"))
         XCTAssertTrue(markdown.contains("### Not sure yet: 203.0.113.9:8443"))
-        XCTAssertTrue(markdown.contains("- Identified: 142.250.185.78:443 (google.com)"))
+        XCTAssertTrue(markdown.contains("- Expected: 142.250.185.78:443 (google.com)"))
     }
 
     func testJSONSortsByScoreThenFirstSeen() throws {
@@ -120,6 +124,58 @@ final class SentinelReportTests: XCTestCase {
         let object = try jsonObject(report([later, earlier, suspiciousAssessment]).render(.json))
         let endpoints = try XCTUnwrap(object["conversations"] as? [[String: Any]]).compactMap { $0["endpoint"] as? String }
         XCTAssertEqual(endpoints, ["93.184.216.34:443", "198.51.100.8:8080", "198.51.100.7:8080"])
+    }
+
+    func testAPortNumberNeverBecomesAName() throws {
+        var identity = EndpointIdentity()
+        identity.facts = [IdentityFact(value: "https", source: .serviceCatalog, confidence: .inferred)]
+        identity.service = "https"
+        let assessment = FlowAssessment(
+            key: FlowKey(transport: .tcp, local: Endpoint(host: "127.0.0.1", port: 50000),
+                         remote: Endpoint(host: "203.0.113.9", port: 443)),
+            direction: .outbound, identity: identity, process: nil, signals: [
+                Signal(kind: .unknownDestination, weight: 30,
+                       detail: "We could not identify who this destination belongs to."),
+            ],
+            score: 30, verdict: .unknown, rationale: "Not sure about this connection.",
+            firstSeen: reportDate, lastSeen: reportDate, packetCount: 2, byteCount: 100
+        )
+        let markdown = report([assessment]).render(.markdown)
+        XCTAssertFalse(markdown.contains("Name: https"),
+                       "a port label must never be printed as the resource name")
+        XCTAssertTrue(markdown.contains("- Name: unidentified"))
+        XCTAssertTrue(markdown.contains("- Service: https (guessed from the port number, not a name)"))
+
+        let object = try jsonObject(report([assessment]).render(.json))
+        let conversation = try XCTUnwrap((object["conversations"] as? [[String: Any]])?.first)
+        XCTAssertEqual(conversation["identified"] as? Bool, false)
+        XCTAssertNil(conversation["name"] as? String)
+        XCTAssertEqual(conversation["service"] as? String, "https")
+    }
+
+    func testAnAddressLiteralIsNeverUsedAsAName() throws {
+        var identity = EndpointIdentity()
+        identity.facts = [IdentityFact(value: "203.0.113.9", source: .sni, confidence: .observed)]
+        let assessment = FlowAssessment(
+            key: FlowKey(transport: .tcp, local: Endpoint(host: "127.0.0.1", port: 50001),
+                         remote: Endpoint(host: "203.0.113.9", port: 443)),
+            direction: .outbound, identity: identity, process: nil, signals: [
+                Signal(kind: .unknownDestination, weight: 30,
+                       detail: "We could not identify who this destination belongs to."),
+            ],
+            score: 30, verdict: .unknown, rationale: "Not sure about this connection.",
+            firstSeen: reportDate, lastSeen: reportDate, packetCount: 2, byteCount: 100
+        )
+        let markdown = report([assessment]).render(.markdown)
+        XCTAssertTrue(markdown.contains("- Name: unidentified"),
+                      "an address must never be dressed up as a name")
+    }
+
+    func testNameCarriesItsSource() throws {
+        let object = try jsonObject(report([suspiciousAssessment]).render(.json))
+        let conversation = try XCTUnwrap((object["conversations"] as? [[String: Any]])?.first)
+        XCTAssertEqual(conversation["name"] as? String, "example.com")
+        XCTAssertEqual(conversation["nameSource"] as? String, "ptr")
     }
 
     func testMarkdownNeverPrintsDomainTypeNames() {
