@@ -9,3 +9,5 @@ out/
 !Fixtures/*.pcapng
 *.log
 .DS_Store
+.env
+.env.*

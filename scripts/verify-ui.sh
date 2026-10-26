@@ -5,12 +5,23 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 OUT="${1:-$ROOT/build/ui-evidence}"
+case "$OUT" in /*) ;; *) OUT="$ROOT/$OUT" ;; esac
+
+# A caller-supplied output directory is removed before the run. Refuse anything
+# outside build/, so a typo cannot delete something that matters.
+guard_output_dir() {
+  case "$1" in
+    "$ROOT"/build/*|"$ROOT"/build) ;;
+    *) echo "refusing to remove $1: output must live under $ROOT/build" >&2; exit 2 ;;
+  esac
+}
 SECONDS_TO_CAPTURE="${2:-12}"
 BUNDLE="$ROOT/build/Wireshark Sentinel.app"
 BINARY="$BUNDLE/Contents/MacOS/WiresharkSentinel"
 
 bash "$ROOT/scripts/build-app.sh" >/dev/null
 
+guard_output_dir "$OUT"
 rm -rf "$OUT"
 mkdir -p "$OUT"
 

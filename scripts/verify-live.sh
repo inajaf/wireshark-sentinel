@@ -6,12 +6,23 @@ cd "$(dirname "$0")/.."
 ROOT="$PWD"
 DURATION="${1:-20}"
 OUT="${2:-$ROOT/build/live-evidence}"
+case "$OUT" in /*) ;; *) OUT="$ROOT/$OUT" ;; esac
+
+# A caller-supplied output directory is removed before the run. Refuse anything
+# outside build/, so a typo cannot delete something that matters.
+guard_output_dir() {
+  case "$1" in
+    "$ROOT"/build/*|"$ROOT"/build) ;;
+    *) echo "refusing to remove $1: output must live under $ROOT/build" >&2; exit 2 ;;
+  esac
+}
 INTERFACE="${3:-en0}"
 BUNDLE="$ROOT/build/Wireshark Sentinel.app"
 BINARY="$BUNDLE/Contents/MacOS/WiresharkSentinel"
 
 bash "$ROOT/scripts/build-app.sh" >/dev/null
 
+guard_output_dir "$OUT"
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
