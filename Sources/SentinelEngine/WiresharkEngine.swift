@@ -186,6 +186,7 @@ public final class TSharkEngine: CaptureEngine, @unchecked Sendable {
     private static let packetFields = [
         "frame.number", "frame.time_epoch", "ip.src", "ip.dst", "ipv6.src", "ipv6.dst",
         "tcp.srcport", "tcp.dstport", "udp.srcport", "udp.dstport",
+        "tcp.flags.syn", "tcp.flags.ack", "tcp.flags.str",
         "_ws.col.Protocol", "_ws.col.Info", "frame.len",
         "dns.qry.name", "tls.handshake.extensions_server_name", "http.host",
     ]
