@@ -23,15 +23,16 @@ final class SentinelSuspicionTests: XCTestCase {
     }
 
     private func flow(
-        remote: String = "203.0.113.9", port: UInt16 = 443, direction: FlowDirection = .outbound,
+        remote: String = "203.0.113.9", port: UInt16 = 443, localPort: UInt16 = 49152,
+        direction: FlowDirection = .outbound, transport: TransportProtocol = .tcp,
         packetTimes: [Date] = [], byteCount: Int = 0, identity: EndpointIdentity = EndpointIdentity(),
         process: ProcessIdentity? = nil, protocols: Set<String> = ["TCP"], plaintext: Bool = false,
         inboundInitiated: Bool = false, localListener: Bool = false
     ) -> FlowObservation {
         FlowObservation(
             key: FlowKey(
-                transport: .tcp,
-                local: Endpoint(host: "192.168.1.20", port: 49152),
+                transport: transport,
+                local: Endpoint(host: "192.168.1.20", port: localPort),
                 remote: Endpoint(host: remote, port: port)
             ),
             direction: direction, packetTimes: packetTimes, byteCount: byteCount, identity: identity,
@@ -100,7 +101,7 @@ final class SentinelSuspicionTests: XCTestCase {
         XCTAssertEqual(unsolicited.verdict, .suspicious)
 
         let listening = engine.assess(flow(
-            remote: "203.0.113.7", port: 22, direction: .inbound,
+            remote: "203.0.113.7", port: 22, localPort: 22, direction: .inbound,
             identity: identified("ssh.example"), protocols: ["TLS"], inboundInitiated: true, localListener: true
         ))
         XCTAssertTrue(listening.signals.isEmpty)
@@ -229,5 +230,77 @@ final class SentinelSuspicionTests: XCTestCase {
         XCTAssertEqual(assessment.firstSeen, epoch)
         XCTAssertEqual(assessment.lastSeen, epoch.addingTimeInterval(30))
         XCTAssertEqual(assessment.packetCount, 0)
+    }
+
+    func testLiveRouterDatagramsNoLongerRankAsSuspicious() {
+        for port: UInt16 in [6698, 43525, 29974] {
+            let assessment = engine.assess(flow(
+                remote: "192.168.1.254", port: port, direction: .inbound, transport: .udp,
+                packetTimes: [epoch], identity: identified("dsldevice.lan"),
+                protocols: ["UDP", "MDNS"], inboundInitiated: true
+            ))
+            XCTAssertEqual(kinds(assessment), [.unusualPort], "port \(port)")
+            XCTAssertEqual(assessment.score, 25, "port \(port)")
+            XCTAssertEqual(assessment.verdict, .unknown, "port \(port)")
+        }
+    }
+
+    func testLiveAppleDatagramNoLongerRanksAsSuspicious() {
+        let assessment = engine.assess(flow(
+            remote: "17.248.211.64", port: 50310, direction: .inbound, transport: .udp,
+            packetTimes: [epoch], identity: identified("https"),
+            protocols: ["UDP", "QUIC"], inboundInitiated: true
+        ))
+        XCTAssertEqual(kinds(assessment), [.unusualPort])
+        XCTAssertEqual(assessment.score, 25)
+        XCTAssertEqual(assessment.verdict, .unknown)
+    }
+
+    func testInboundEphemeralRemotePortToLocal443FiresNoUnusualPort() {
+        let assessment = engine.assess(flow(
+            remote: "17.248.211.64", port: 50310, localPort: 443, direction: .inbound,
+            identity: identified("https"), protocols: ["TCP"], inboundInitiated: true
+        ))
+        XCTAssertEqual(kinds(assessment), [.inboundUnsolicited])
+        XCTAssertEqual(assessment.score, 40)
+        XCTAssertEqual(assessment.verdict, .unknown)
+    }
+
+    func testInboundTcpHandshakeKeepsFullWeight() {
+        let assessment = engine.assess(flow(
+            remote: "203.0.113.7", port: 50310, localPort: 8443, direction: .inbound,
+            packetTimes: [epoch, epoch.addingTimeInterval(0.1), epoch.addingTimeInterval(0.2)],
+            identity: identified("ssh.example"), protocols: ["TLS"], inboundInitiated: true
+        ))
+        XCTAssertEqual(assessment.signals.first { $0.kind == .inboundUnsolicited }?.weight, 40)
+        XCTAssertEqual(assessment.score, 65)
+        XCTAssertEqual(assessment.verdict, .suspicious)
+    }
+
+    func testRepeatedUdpKeepsInboundUnsolicited() {
+        let assessment = engine.assess(flow(
+            remote: "198.51.100.9", port: 5000, localPort: 5353, direction: .inbound, transport: .udp,
+            packetTimes: [epoch, epoch.addingTimeInterval(1), epoch.addingTimeInterval(2)],
+            identity: identified("peer.example"), protocols: ["UDP", "MDNS"], inboundInitiated: true
+        ))
+        XCTAssertEqual(kinds(assessment), [.inboundUnsolicited])
+        XCTAssertEqual(assessment.score, 40)
+    }
+
+    func testSingleOtherTransportPacketIsNotUnsolicited() {
+        let assessment = engine.assess(flow(
+            remote: "198.51.100.9", port: 4444, localPort: 5353, direction: .inbound, transport: .other,
+            packetTimes: [epoch], identity: identified("peer.example"),
+            protocols: ["GRE"], inboundInitiated: true
+        ))
+        XCTAssertFalse(kinds(assessment).contains(.inboundUnsolicited))
+    }
+
+    func testOutboundToPort6698StillFiresUnusualPort() {
+        let assessment = engine.assess(flow(
+            remote: "192.168.1.254", port: 6698, identity: identified("dsldevice.lan"), protocols: ["TLS"]
+        ))
+        XCTAssertEqual(kinds(assessment), [.unusualPort])
+        XCTAssertEqual(assessment.score, 25)
     }
 }

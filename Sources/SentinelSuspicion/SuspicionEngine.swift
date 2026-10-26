@@ -80,7 +80,7 @@ public struct SuspicionEngine: Sendable {
             ))
         }
 
-        if observation.isInboundInitiated && !observation.hasLocalListener {
+        if observation.isInboundInitiated, !observation.hasLocalListener, Self.carriesRepetition(observation) {
             fired.append(makeSignal(
                 .inboundUnsolicited,
                 detail: "Something outside this Mac opened the connection to a port with no local listener.",
@@ -108,11 +108,12 @@ public struct SuspicionEngine: Sendable {
             ))
         }
 
-        if !Self.wellKnownPorts.contains(observation.key.remote.port) {
+        if !Self.wellKnownPorts.contains(observation.servicePort) {
+            let side = observation.direction == .inbound ? "local" : "remote"
             fired.append(makeSignal(
                 .unusualPort,
-                detail: "It uses remote port \(observation.key.remote.port), which is not a usual service port.",
-                evidence: ["remote \(observation.key.remote)"]
+                detail: "It uses \(side) port \(observation.servicePort), which is not a usual service port.",
+                evidence: ["\(side) port \(observation.servicePort)"]
             ))
         }
 
@@ -140,11 +141,11 @@ public struct SuspicionEngine: Sendable {
             ))
         }
 
-        if Self.isTransportOnly(protocols, port: observation.key.remote.port) {
+        if Self.isTransportOnly(protocols, port: observation.servicePort) {
             fired.append(makeSignal(
                 .rawIPTraffic,
                 detail: "It carries raw \(protocols.sorted().joined(separator: " or ")) with no recognised application protocol.",
-                evidence: ["remote port \(observation.key.remote.port)"]
+                evidence: ["service port \(observation.servicePort)"]
             ))
         }
 
@@ -264,9 +265,21 @@ public struct SuspicionEngine: Sendable {
     private static func isTransportOnly(_ protocols: Set<String>, port: UInt16) -> Bool {
         !protocols.isEmpty && protocols.isSubset(of: transportProtocols) && !wellKnownPorts.contains(port)
     }
+
+    /// One stray datagram to a closed port is ordinary noise on a LAN and on the internet, so the
+    /// unreliable transports need repetition before inbound traffic counts as someone knocking.
+    private static func carriesRepetition(_ observation: FlowObservation) -> Bool {
+        observation.key.transport == .tcp || observation.packetTimes.count >= 3
+    }
 }
 
 private extension FlowObservation {
+    /// The port a client connects to. In an inbound conversation the remote port is the sender's
+    /// ephemeral port, so the service being reached sits on the local side.
+    var servicePort: UInt16 {
+        direction == .inbound ? key.local.port : key.remote.port
+    }
+
     /// A private, loopback, broadcast or multicast destination is not a remote resource under
     /// investigation, so not knowing its name says nothing about the machine.
     var hasNonPublicDestination: Bool {
