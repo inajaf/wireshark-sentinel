@@ -116,6 +116,22 @@ final class SentinelIdentityTests: XCTestCase {
         }
     }
 
+    func testAnAddressWearingAPortIsStillAnAddress() {
+        for value in ["203.0.113.9", "203.0.113.9:8080", "203.0.113.9.", "[2001:db8::1]:8080", "2001:db8::1"] {
+            XCTAssertTrue(EndpointIdentity.isAddressLiteral(value), value)
+        }
+        for value in ["api.example.com", "cdn.example.net:8443", "example.203.0.113.9", "203.0.113"] {
+            XCTAssertFalse(EndpointIdentity.isAddressLiteral(value), value)
+        }
+    }
+
+    func testAPortLabelIsNotIdentification() {
+        var serviceOnly = EndpointIdentity()
+        serviceOnly.facts = [IdentityFact(value: "https", source: .serviceCatalog, confidence: .inferred)]
+        serviceOnly.service = "https"
+        XCTAssertFalse(serviceOnly.isIdentified, "knowing the port is not knowing the resource")
+    }
+
     func testANameNeedsNamingEvidence() {
         var serviceOnly = EndpointIdentity()
         serviceOnly.facts = [IdentityFact(value: "https", source: .serviceCatalog, confidence: .inferred)]

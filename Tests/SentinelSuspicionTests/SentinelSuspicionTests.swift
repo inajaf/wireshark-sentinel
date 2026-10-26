@@ -95,6 +95,21 @@ final class SentinelSuspicionTests: XCTestCase {
         )
         XCTAssertEqual(engine.assess(outboundGroup).verdict, .unknown)
 
+        // A subnet-directed broadcast is a group destination too, even though it
+        // carries no 224.* prefix and the address scope cannot recognise it alone.
+        let directed = FlowObservation(
+            key: FlowKey(transport: .udp,
+                         local: Endpoint(host: "192.168.1.80", port: 53184),
+                         remote: Endpoint(host: "192.168.1.255", port: 6667)),
+            direction: .broadcast,
+            packetTimes: stride(from: 0.0, to: 25.0, by: 5.0).map { Date(timeIntervalSince1970: $0) },
+            byteCount: 800,
+            identity: EndpointIdentity(),
+            protocols: ["UDP"]
+        )
+        XCTAssertEqual(engine.assess(directed).verdict, .unknown,
+                       "a directed broadcast must not be accused either")
+
         // The same shape on a unicast address may still be an accusation.
         let unicast = FlowObservation(
             key: FlowKey(transport: .udp,

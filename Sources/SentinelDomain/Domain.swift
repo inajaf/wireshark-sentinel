@@ -257,11 +257,28 @@ public struct EndpointIdentity: Sendable {
     }
 
     public static func isAddressLiteral(_ value: String) -> Bool {
-        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        var trimmed = value.trimmingCharacters(in: .whitespaces)
+        while trimmed.hasSuffix(".") { trimmed.removeLast() }
+        if isBareAddress(trimmed) { return true }
+        if trimmed.hasPrefix("["), let close = trimmed.firstIndex(of: "]") {
+            return isBareAddress(String(trimmed[trimmed.index(after: trimmed.startIndex)..<close]))
+        }
+        // "203.0.113.9:8080" is an address wearing a port. A bare IPv6 address also
+        // ends in a colon segment, so only strip when the head is a dotted quad.
+        if trimmed.filter({ $0 == "." }).count == 3, let colon = trimmed.lastIndex(of: ":") {
+            let port = trimmed[trimmed.index(after: colon)...]
+            if !port.isEmpty, port.allSatisfy({ $0.isNumber }) {
+                return isBareAddress(String(trimmed[..<colon]))
+            }
+        }
+        return false
+    }
+
+    private static func isBareAddress(_ value: String) -> Bool {
         var v4 = in_addr()
         var v6 = in6_addr()
-        if inet_pton(AF_INET, trimmed, &v4) == 1 { return true }
-        if inet_pton(AF_INET6, trimmed, &v6) == 1 { return true }
+        if inet_pton(AF_INET, value, &v4) == 1 { return true }
+        if inet_pton(AF_INET6, value, &v6) == 1 { return true }
         return false
     }
 
@@ -273,9 +290,9 @@ public struct EndpointIdentity: Sendable {
         }
     }
 
-    public var isIdentified: Bool {
-        facts.contains { $0.confidence != .unknown } || organization != nil || service != nil
-    }
+    /// Identified means the evidence names this resource. A port label is not a name,
+    /// so a conversation known only by its port is unidentified and must be flagged.
+    public var isIdentified: Bool { evidencedName != nil }
 
 
 }

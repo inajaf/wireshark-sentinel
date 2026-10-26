@@ -90,7 +90,7 @@ extension SentinelReport {
     /// Every line that names a remote host has to carry a verdict word, wherever the host came from.
     private func tag(_ text: String, hosts: Set<String>, word: String) -> String {
         guard !text.contains(word), hosts.contains(where: { text.contains($0) }) else { return text }
-        return "\(word). \(text)"
+        return "\(text)  [\(word)]"
     }
 
     private func signalTitles(_ signals: [Signal]) -> String {

@@ -97,6 +97,7 @@ final class SentinelModel: ObservableObject {
     private var publisherTask: Task<Void, Never>?
     private var pendingPackets: [CapturedPacket] = []
     private var localAddresses: Set<String> = []
+    private var broadcastAddresses: Set<String> = []
     private var captureStartedAt: Date?
     private var processedPackets = 0
 
@@ -126,6 +127,7 @@ final class SentinelModel: ObservableObject {
 
     func bootstrap(selfTestPath: String?, seconds: TimeInterval, interfaceID: String?) async {
         localAddresses = LocalAddresses.current()
+        broadcastAddresses = LocalAddresses.currentBroadcasts()
         attributor = ProcessAttributor()
 
         if let install = WiresharkInstall.locate() {
@@ -217,7 +219,11 @@ final class SentinelModel: ObservableObject {
 
         // A conversation needs a remote service. `orient` drops ARP and neighbour
         // discovery, which have neither host nor port and would surface as "unknown:0".
-        guard let oriented = Self.orient(packet, localAddresses: localAddresses) else { return }
+        guard let oriented = Self.orient(
+            packet,
+            localAddresses: localAddresses,
+            broadcastAddresses: broadcastAddresses
+        ) else { return }
 
         let conversation = ConversationKey(
             transport: oriented.key.transport,
@@ -257,13 +263,44 @@ final class SentinelModel: ObservableObject {
     /// needs evidence: a TCP SYN, or the port roles.
     static func orient(
         _ packet: CapturedPacket,
-        localAddresses: Set<String>
+        localAddresses: Set<String>,
+        broadcastAddresses: Set<String> = []
     ) -> (key: FlowKey, direction: FlowDirection, inboundInitiated: Bool, decisive: Bool)? {
         let isLocal: (String) -> Bool = { host in
             !host.isEmpty && (localAddresses.contains(host) || host.hasPrefix("fe80"))
         }
         let sourceIsLocal = isLocal(packet.source)
         let destinationIsLocal = isLocal(packet.destination)
+        // A subnet-directed broadcast such as 192.168.1.255 carries no 224.* prefix,
+        // so the interfaces' own broadcast addresses are the only reliable source.
+        let destinationIsGroup = AddressScope.isMulticastOrBroadcast(packet.destination)
+            || broadcastAddresses.contains(packet.destination)
+        let groupDirection: FlowDirection = packet.destination == "255.255.255.255"
+            ? .broadcast
+            : (packet.destination.lowercased().hasPrefix("ff") ? .multicast : .broadcast)
+
+        if destinationIsGroup {
+            // The group is addressed by whoever sent it. When this Mac is the sender
+            // the group is the far end; when a neighbour is the sender, the neighbour
+            // is the resource worth naming and the group is where it spoke.
+            let key: FlowKey
+            if sourceIsLocal {
+                key = FlowKey(
+                    transport: packet.transport,
+                    local: Endpoint(host: packet.source, port: packet.sourcePort),
+                    remote: Endpoint(host: packet.destination, port: packet.destinationPort)
+                )
+            } else {
+                key = FlowKey(
+                    transport: packet.transport,
+                    local: Endpoint(host: packet.destination, port: packet.destinationPort),
+                    remote: Endpoint(host: packet.source, port: packet.destinationPort)
+                )
+            }
+            // Group traffic has no handshake and no service port; it is never an
+            // accusation, so it carries no initiation claim.
+            return (key, groupDirection, false, false)
+        }
 
         let localHost: String
         let localPort: UInt16
@@ -298,7 +335,7 @@ final class SentinelModel: ObservableObject {
             // The port a broadcaster is addressing is the service; its own source
             // port is ephemeral and says nothing about what it is talking to.
             remotePort = packet.destinationPort
-            baseDirection = AddressScope.isMulticastOrBroadcast(packet.destination) ? .broadcast : .outbound
+            baseDirection = .outbound
         }
 
         guard !remoteHost.isEmpty, remotePort != 0 else { return nil }
@@ -479,6 +516,28 @@ final class SentinelModel: ObservableObject {
 }
 
 enum LocalAddresses {
+    /// The broadcast address of every broadcast-capable IPv4 interface.
+    static func currentBroadcasts() -> Set<String> {
+        var broadcasts: Set<String> = ["255.255.255.255"]
+        var pointer: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&pointer) == 0, let first = pointer else { return broadcasts }
+        defer { freeifaddrs(pointer) }
+
+        var cursor: UnsafeMutablePointer<ifaddrs>? = first
+        while let entry = cursor {
+            defer { cursor = entry.pointee.ifa_next }
+            guard let address = entry.pointee.ifa_addr, address.pointee.sa_family == UInt8(AF_INET) else { continue }
+            guard Int32(entry.pointee.ifa_flags) & IFF_BROADCAST != 0,
+                  let broad = entry.pointee.ifa_dstaddr else { continue }
+            var buffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            if getnameinfo(broad, socklen_t(broad.pointee.sa_len), &buffer, socklen_t(buffer.count),
+                           nil, 0, NI_NUMERICHOST) == 0 {
+                broadcasts.insert(String(cString: buffer))
+            }
+        }
+        return broadcasts
+    }
+
     static func current() -> Set<String> {
         var addresses: Set<String> = ["127.0.0.1", "::1", "0.0.0.0"]
         var pointer: UnsafeMutablePointer<ifaddrs>?
