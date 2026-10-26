@@ -1,0 +1,11 @@
+.build/
+.swiftpm/
+DerivedData/
+*.app
+!scripts/*.sh
+build/
+out/
+*.pcap
+!Fixtures/*.pcapng
+*.log
+.DS_Store
