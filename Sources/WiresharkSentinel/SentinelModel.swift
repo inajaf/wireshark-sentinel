@@ -17,7 +17,6 @@ struct ConversationKey: Hashable, Sendable {
     let transport: TransportProtocol
     let remoteHost: String
     let remotePort: UInt16
-    let direction: FlowDirection
 }
 
 /// One conversation, accumulated as packets arrive.
@@ -31,11 +30,16 @@ struct FlowAggregate: Sendable {
     var byteCount: Int
     var protocols: Set<String>
     var sawPlaintext: Bool
+    var direction: FlowDirection
+    var directionDecided: Bool
     var inboundInitiated: Bool
 
-    init(key: ConversationKey, representative: FlowKey, inboundInitiated: Bool) {
+    init(key: ConversationKey, representative: FlowKey, direction: FlowDirection, directionDecided: Bool, inboundInitiated: Bool) {
         self.key = key
         self.representative = representative
+        self.direction = direction
+        self.directionDecided = directionDecided
+        self.inboundInitiated = inboundInitiated
         self.localPorts = []
         self.packetTimes = []
         self.byteCount = 0
@@ -53,7 +57,7 @@ struct FlowAggregate: Sendable {
     var observation: FlowObservation {
         FlowObservation(
             key: representative,
-            direction: key.direction,
+            direction: direction,
             packetTimes: packetTimes,
             byteCount: byteCount,
             identity: EndpointIdentity(),
@@ -218,23 +222,31 @@ final class SentinelModel: ObservableObject {
         let conversation = ConversationKey(
             transport: oriented.key.transport,
             remoteHost: oriented.key.remoteEndpoint.host,
-            remotePort: oriented.key.remoteEndpoint.port,
-            direction: oriented.direction
+            remotePort: oriented.key.remoteEndpoint.port
         )
 
         if flows[conversation] == nil {
             flows[conversation] = FlowAggregate(
                 key: conversation,
                 representative: oriented.key,
+                direction: oriented.direction,
+                directionDecided: oriented.decisive,
                 inboundInitiated: oriented.inboundInitiated
             )
+        }
+        // A reply packet and the request it answers are one conversation. Only
+        // decisive evidence, a handshake or the port roles, may set the direction.
+        if oriented.decisive, flows[conversation]?.directionDecided != true {
+            flows[conversation]?.direction = oriented.direction
+            flows[conversation]?.directionDecided = true
+            flows[conversation]?.inboundInitiated = oriented.inboundInitiated
+            flows[conversation]?.representative = oriented.key
         }
         flows[conversation]?.noteLocalPort(oriented.key.localEndpoint.port)
         flows[conversation]?.packetTimes.append(packet.time)
         flows[conversation]?.byteCount += packet.length
         flows[conversation]?.protocols.insert(packet.proto)
         if Self.plaintextProtocols.contains(packet.proto) { flows[conversation]?.sawPlaintext = true }
-        if oriented.inboundInitiated { flows[conversation]?.inboundInitiated = true }
     }
 
     /// Which side is this Mac, and who opened the connection.
@@ -246,7 +258,7 @@ final class SentinelModel: ObservableObject {
     static func orient(
         _ packet: CapturedPacket,
         localAddresses: Set<String>
-    ) -> (key: FlowKey, direction: FlowDirection, inboundInitiated: Bool)? {
+    ) -> (key: FlowKey, direction: FlowDirection, inboundInitiated: Bool, decisive: Bool)? {
         let isLocal: (String) -> Bool = { host in
             !host.isEmpty && (localAddresses.contains(host) || host.hasPrefix("fe80"))
         }
@@ -296,13 +308,13 @@ final class SentinelModel: ObservableObject {
         )
 
         if baseDirection == .loopback {
-            return (key, .loopback, false)
+            return (key, .loopback, false, true)
         }
 
         let sawOpeningSYN = TCPFlags.synOnly(packet)
         if sawOpeningSYN {
             let inbound = !sourceIsLocal
-            return (key, inbound ? .inbound : .outbound, inbound)
+            return (key, inbound ? .inbound : .outbound, inbound, true)
         }
 
         // Without a handshake in view, the port roles decide. An ephemeral local
@@ -311,12 +323,14 @@ final class SentinelModel: ObservableObject {
         let localIsService = isServicePort(localPort)
         let remoteIsService = isServicePort(remotePort)
         if remoteIsService && !localIsService {
-            return (key, .outbound, false)
+            return (key, .outbound, false, true)
         }
         if localIsService && !remoteIsService {
-            return (key, .inbound, true)
+            return (key, .inbound, true, true)
         }
-        return (key, baseDirection, false)
+        // Neither port identifies the service, so this packet is not evidence of
+        // who opened the connection. Wait for a packet that is.
+        return (key, baseDirection, false, false)
     }
 
     private static let extraServicePorts: Set<UInt16> = [5223, 5228, 5353, 6679, 1900]
@@ -355,7 +369,7 @@ final class SentinelModel: ObservableObject {
             }
         }
         // Inbound traffic is owned by whoever listens, not by an ephemeral port.
-        if aggregate.key.direction == .inbound {
+        if aggregate.direction == .inbound {
             for port in listeners where port == remote.port {
                 return attributor.process(remote: remote, localPort: port, transport: aggregate.key.transport)
             }

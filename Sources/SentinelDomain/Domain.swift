@@ -294,7 +294,7 @@ public enum SignalKind: String, Sendable, Codable, CaseIterable {
         case .inboundUnsolicited: return "Inbound connection to this Mac"
         case .beaconing: return "Regular beaconing"
         case .unsignedProcess: return "Unsigned or unnotarised process"
-        case .unusualPort: return "Unusual remote port"
+        case .unusualPort: return "Unusual service port"
         case .plaintextProtocol: return "Plaintext protocol"
         case .dnsHighVolume: return "High-volume DNS"
         case .longLivedIdle: return "Long-lived idle connection"
