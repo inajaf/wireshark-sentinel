@@ -9,6 +9,7 @@ import SentinelIntel
 import SentinelBlock
 import SentinelSuspicion
 import SentinelReport
+import SentinelPath
 
 /// A conversation as a person thinks about it: one remote service, one direction.
 ///
@@ -101,6 +102,11 @@ final class SentinelModel: ObservableObject {
     @Published var blockError: String?
     @Published var blockOutput: String?
     @Published var isApplyingBlock = false
+    @Published var pathMaps: [FlowKey: ConnectionPath] = [:]
+    @Published var pathBuildFlow: FlowKey?
+    @Published var tracingFlow: FlowKey?
+    @Published var pingingFlow: FlowKey?
+    @Published var pathError: String?
 
     let registry = UIRegistry()
 
@@ -111,6 +117,9 @@ final class SentinelModel: ObservableObject {
     private let prober = ActiveProber()
     private let blockStore: BlockStore
     private let blockController = PFBlockController()
+    private let pathBuilder = ConnectionPathBuilder()
+    private let tracer = TracerouteClient()
+    private let pinger = PingClient()
     private var attributor: ProcessAttributor?
     private let suspicion = SuspicionEngine()
 
@@ -678,6 +687,139 @@ final class SentinelModel: ObservableObject {
             allowPrivate: options.includePrivate
         )
         probeResults[assessment.key] = result
+    }
+
+    // MARK: - Connection path
+
+    /// Builds the passive path around the selected conversation. A deep scan is
+    /// reused when it exists; this never scans per packet and never sends a probe.
+    func loadPath(_ assessment: FlowAssessment, options: ScanOptions = .preset(.deep)) async {
+        pathError = nil
+        if scannedDetails[assessment.key] == nil, scanningFlow == nil {
+            await deepScan(assessment, options: options)
+        }
+        if scannedDetails[assessment.key] == nil, let scanError {
+            pathError = scanError
+        }
+        await rebuildPath(assessment)
+    }
+
+    /// Reads the local route and rebuilds the passive nodes. An existing trace or
+    /// ping belongs to this conversation and survives a rebuild; a route lookup is
+    /// local state, not a probe.
+    func rebuildPath(_ assessment: FlowAssessment) async {
+        guard pathBuildFlow != assessment.key else { return }
+        pathBuildFlow = assessment.key
+        defer {
+            if pathBuildFlow == assessment.key { pathBuildFlow = nil }
+        }
+
+        let details = scannedDetails[assessment.key]
+        var path = await pathBuilder.build(assessment: assessment, details: details)
+        if let previous = pathMaps[assessment.key] {
+            path.trace = previous.trace
+            path.ping = previous.ping
+            if let hostname = previous.ping?.hostname {
+                addResolvedName(hostname, evidence: "name found by the earlier ping", to: &path)
+            }
+        }
+        pathMaps[assessment.key] = path
+    }
+
+    /// Runs traceroute only when the person asks. The destination is checked
+    /// against this Mac's own addresses first so a loopback or group target never
+    /// produces a misleading "path".
+    func traceRoute(for assessment: FlowAssessment) async {
+        guard tracingFlow == nil, pingingFlow == nil else { return }
+        let target = assessment.key.remoteEndpoint.host
+        if let problem = PathProbeSafety.problem(
+            for: target,
+            localAddresses: blockLocalAddresses,
+            broadcastAddresses: blockBroadcastAddresses
+        ) {
+            pathError = problem
+            return
+        }
+
+        pathError = nil
+        tracingFlow = assessment.key
+        defer { tracingFlow = nil }
+
+        if pathMaps[assessment.key] == nil {
+            await rebuildPath(assessment)
+        }
+
+        let trace = await tracer.trace(
+            to: target,
+            localAddresses: blockLocalAddresses,
+            broadcastAddresses: blockBroadcastAddresses
+        )
+        var path: ConnectionPath
+        if let existing = pathMaps[assessment.key] {
+            path = existing
+        } else {
+            path = await pathBuilder.build(
+                assessment: assessment,
+                details: scannedDetails[assessment.key]
+            )
+        }
+        path.trace = trace
+        if assessment.direction == .inbound, var trace = path.trace {
+            trace.warnings.append("The trace follows this Mac's outbound route. An inbound service can arrive by a different path.")
+            path.trace = trace
+        }
+        pathMaps[assessment.key] = path
+    }
+
+    /// Sends one ICMP echo and asks reverse DNS when the ping has no name. It is
+    /// deliberately a button, not part of opening or rebuilding the path.
+    func pingRemote(for assessment: FlowAssessment) async {
+        guard pingingFlow == nil, tracingFlow == nil else { return }
+        let target = assessment.key.remoteEndpoint.host
+        if let problem = PathProbeSafety.problem(
+            for: target,
+            localAddresses: blockLocalAddresses,
+            broadcastAddresses: blockBroadcastAddresses
+        ) {
+            pathError = problem
+            return
+        }
+
+        pathError = nil
+        pingingFlow = assessment.key
+        defer { pingingFlow = nil }
+
+        if pathMaps[assessment.key] == nil {
+            await rebuildPath(assessment)
+        }
+
+        let result = await pinger.ping(
+            target,
+            localAddresses: blockLocalAddresses,
+            broadcastAddresses: blockBroadcastAddresses
+        )
+        var path: ConnectionPath
+        if let existing = pathMaps[assessment.key] {
+            path = existing
+        } else {
+            path = await pathBuilder.build(
+                assessment: assessment,
+                details: scannedDetails[assessment.key]
+            )
+        }
+        path.ping = result
+        if let hostname = result.hostname {
+            let evidence = result.responded ? "ping's reverse lookup" : "PTR lookup after ping got no reply"
+            addResolvedName(hostname, evidence: evidence, to: &path)
+        }
+        pathMaps[assessment.key] = path
+    }
+
+    /// A name found by an explicit ping settles the "no captured name" warning;
+    /// leaving it visible would contradict the name now shown in the graph.
+    private func addResolvedName(_ hostname: String, evidence: String, to path: inout ConnectionPath) {
+        path.addName(hostname, source: .dns, evidence: evidence)
+        path.warnings.removeAll { $0.hasPrefix("No domain name appeared in the captured evidence.") }
     }
 
     // MARK: - Blocking

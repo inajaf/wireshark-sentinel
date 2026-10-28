@@ -1,6 +1,12 @@
 import SwiftUI
 import SentinelDomain
 
+private enum InspectorSheet: String, Identifiable {
+    case block
+    case path
+    var id: String { rawValue }
+}
+
 /// The detailed view of one conversation: what the packets say, what the socket
 /// table says, and which of those two is speaking. Every value carries where it
 /// came from, because a certificate name and a port guess must never look alike.
@@ -10,7 +16,7 @@ struct ConnectionInspector: View {
     @EnvironmentObject var model: SentinelModel
     @Environment(\.dismiss) private var dismiss
     @State private var options = ScanOptions.preset(.deep)
-    @State private var showingBlock = false
+    @State private var sheet: InspectorSheet?
 
     private var details: ConnectionDetails? {
         model.connectionDetails(for: assessment)
@@ -69,8 +75,13 @@ struct ConnectionInspector: View {
             footer
         }
         .frame(minWidth: 660, idealWidth: 760, minHeight: 560, idealHeight: 700)
-        .sheet(isPresented: $showingBlock) {
-            BlockEditor(target: model.suggestedBlockTarget(for: assessment))
+        .sheet(item: $sheet) { sheet in
+            switch sheet {
+            case .block:
+                BlockEditor(target: model.suggestedBlockTarget(for: assessment))
+            case .path:
+                ConnectionGraphView(assessment: assessment, options: options)
+            }
         }
         .task {
             if details == nil {
@@ -159,7 +170,15 @@ struct ConnectionInspector: View {
             Spacer()
 
             Button {
-                showingBlock = true
+                sheet = .path
+            } label: {
+                Label("Path map", systemImage: "arrow.triangle.branch")
+            }
+            .help("Show the local process, route, hops and service as one path")
+            .disabled(isScanning)
+
+            Button {
+                sheet = .block
             } label: {
                 Label("Block…", systemImage: "hand.raised")
             }

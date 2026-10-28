@@ -123,6 +123,36 @@ connection to the observed port, records whether it answers, and closes it. Loop
 broadcast, unspecified and (unless explicitly allowed) private or CGNAT targets are refused. A TLS
 certificate probe is not offered: the passive scan already reads the certificate from the capture.
 
+## Connection path maps
+
+The inspector's `Path map` action turns one selected conversation into a vertical rail:
+
+```
+local process → local socket → gateway (or direct route) → traceroute hops → service
+```
+
+Building the map is passive. It combines the socket and process from the deep scan, names from
+SNI, certificates, HTTP Host, DNS and PTR, the local routing-table answer from
+`route -n get <address>`, and the remote scope, ASN and registry values already collected. The same
+name seen in more than one place is shown once, with every source that supports it. A name is never
+invented from a port number, and a hop that does not answer stays a visible gap.
+
+Two buttons send traffic, and only when pressed:
+
+- **Ping & resolve** sends one ICMP echo. `ping` is run without `-n`, so its first line can carry the
+  reverse-DNS name; if the ping has no name, the app asks the system resolver directly. The result
+  says whether the reply came from ICMP or only from reverse DNS. This is how a selected IP can
+  reveal a domain name when one exists.
+- **Trace route** runs `/usr/sbin/traceroute` for IPv4 or `/usr/sbin/traceroute6` for IPv6 with
+  `-n -w 1 -q 1 -m 16`. The answering hops are added to the rail. A partial trace is labelled as
+  partial rather than extended with guesses. For an inbound conversation, the trace follows this
+  Mac's outbound route, which can differ from the path the inbound packet took.
+
+Both probes refuse loopback, link-local, multicast, broadcast, unspecified, unknown and the exact
+addresses of this Mac. Private and public targets are allowed, because a LAN service has a real
+path and a router can name it. Trace and ping results belong to the path and survive a refresh or a
+rebuild; a new probe replaces the previous result for that path.
+
 ## Manual firewall blocks
 
 The inspector's `Block…` action, or `Add Address…` in the Blocks manager, creates a pf block. The
@@ -159,6 +189,9 @@ scripts/verify-ui.sh                        # four panes render in a real window
 scripts/verify-live.sh 20                   # live capture, identification, attribution, report
 ```
 
+`swift test --filter SentinelPathTests` exercises the route, traceroute and ping parsers, probe
+safety, and the passive path builder without sending any network traffic.
+
 `scripts/verify-ui.sh` also writes a screenshot of the app window to `build/ui-evidence/window.png`
 and the rendered pane identifiers to `build/ui-evidence/ui.json`.
 
@@ -172,8 +205,12 @@ and the rendered pane identifiers to `build/ui-evidence/ui.json`.
   and the certificate, not from the payload. TLS 1.3 commonly encrypts certificates, so some
   connections have a handshake but no certificate to show.
 - Deep inspection reads the capture file after the fact. It does not re-dissect every live packet.
+- The path map is only as complete as the evidence. If the network drops traceroute probes, the
+  intermediate hops are missing and the map says the path is partial. A ping that gets no reply does
+  not prove the service is down; firewalls commonly drop ICMP. A PTR name can be stale or shared.
 - RDAP and ASN lookups leave this Mac with the remote IP address. Active probing opens a new
-  connection that the far end can see. Both are explicit, per-target actions.
+  connection that the far end can see. Ping and traceroute send packets as well. All four are
+  explicit, per-target actions.
 - A block covers an address and optionally a port. It cannot name a domain or one application, and
   it requires administrator approval because pf rules belong to the system.
 - The block script has been checked with `pfctl -n` and its unit tests, but applying it for real

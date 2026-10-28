@@ -45,6 +45,8 @@ A native macOS app, `Wireshark Sentinel`:
 3. A Sentinel pane that answers, per remote resource: who is it, who on this Mac opened it, is it
    expected, and why.
 4. An exportable plain-language report.
+5. A connection path map for the selected conversation, with a passive route rail and explicit,
+   separately confirmed ping and traceroute actions.
 
 ## Done predicate
 
@@ -89,6 +91,9 @@ Each has one command. A criterion without pasted output is not met.
 11. The block planner refuses unsafe targets, emits pf rules for both address families, the apply
     script is valid shell, and records survive a store round trip.
     `swift test --filter SentinelBlockTests`
+12. The path map parses local routes, traceroute and ping output, refuses non-service targets, and
+    merges captured names by value without sending traffic in tests.
+    `swift test --filter SentinelPathTests`
 
 ## Out of scope
 
@@ -98,6 +103,8 @@ Each has one command. A criterion without pasted output is not met.
   sudo.
 - Automatic blocking, filtering or killing traffic. Enforcement is limited to a manual, reviewed pf
   block; nothing blocks on a verdict or a schedule.
+- Automatic traceroute or ping. Both send new packets and therefore run only from an explicit
+  per-target button, never when a path opens or a scan finishes.
 - Windows and Linux.
 - Bundling or redistributing the Wireshark engine. It is invoked from the installed app.
 - `sharkd` integration. The packet list streams from `tshark -T ek`, the detail tree from
@@ -140,6 +147,29 @@ The change is deliberately narrow:
 The enforcement layer is pf anchor `com.local.sentinel`, because the app is ad-hoc signed and a
 Network Extension is not available on this machine. The anchor hook is inserted before the first
 Apple anchor so Sentinel's `quick` rules are evaluated first.
+
+## Deliberate scope change: path tracing and ping
+
+The original shape was passive observation plus opt-in external lookups. Eldar later asked to see
+the full path to a selected service and to ping it for a domain name. That requires new packets,
+so the scope change is explicit and narrow:
+
+- **Passive by default.** Opening the path map builds it from the deep scan, the socket and process
+  tables, the capture, and the local routing table (`route -n get`). It sends nothing.
+- **Ping is explicit.** The Ping & resolve button sends one ICMP echo, then asks reverse DNS when
+  the ping has no name. The result distinguishes an ICMP reply from a PTR-only name.
+- **Traceroute is explicit.** The Trace route button runs the system traceroute with one query per
+  hop and a 16-hop limit. A partial or refused trace is shown as partial; unanswered hops are not
+  filled in.
+- **Same safety boundary as the other probes.** Loopback, link-local, multicast, broadcast,
+  unspecified, unknown and exact self targets are refused. Private and public targets are allowed.
+- **Results are per path and reversible in effect only by refresh.** Trace and ping results are kept
+  when the passive path is rebuilt, and a new run replaces the previous result. No result changes a
+  firewall rule or a verdict.
+
+The IPv6 ping helper on this host (`/sbin/ping6`) can fail to resolve a literal address. That is a
+limitation of the local tool, not treated as proof that the target is down: the path map reports the
+ping error and still attempts the system PTR lookup.
 
 ## Assumptions and falsifiers
 
