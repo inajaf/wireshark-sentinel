@@ -16,6 +16,12 @@ mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 
 cp "$ROOT/.build/release/$BINARY" "$BUNDLE/Contents/MacOS/$BINARY"
 
+if [ ! -f "$ROOT/Assets/AppIcon.icns" ]; then
+    echo "==> app icon missing; generating it"
+    "$ROOT/scripts/make-icon.sh"
+fi
+cp "$ROOT/Assets/AppIcon.icns" "$BUNDLE/Contents/Resources/AppIcon.icns"
+
 cat > "$BUNDLE/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -23,6 +29,7 @@ cat > "$BUNDLE/Contents/Info.plist" <<'PLIST'
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
     <key>CFBundleExecutable</key><string>WiresharkSentinel</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleIdentifier</key><string>local.sentinel.wireshark</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleName</key><string>Wireshark Sentinel</string>
