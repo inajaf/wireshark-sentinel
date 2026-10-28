@@ -29,6 +29,8 @@ struct MainWindow: View {
 struct ControlBar: View {
     @EnvironmentObject var model: SentinelModel
     @State private var showingBlocks = false
+    @State private var showingWiFi = false
+    @StateObject private var wifi = NearbyWiFiModel()
 
     var body: some View {
         HStack(spacing: 12) {
@@ -79,6 +81,16 @@ struct ControlBar: View {
             .help("Review firewall blocks, persistence and the audit log")
             .sheet(isPresented: $showingBlocks) {
                 BlockManagerView()
+            }
+
+            Button {
+                showingWiFi = true
+            } label: {
+                Label("Wi-Fi", systemImage: "wifi")
+            }
+            .help("List nearby Wi-Fi networks, channel occupancy and security")
+            .sheet(isPresented: $showingWiFi) {
+                NearbyWiFiView(model: wifi)
             }
 
             Spacer()

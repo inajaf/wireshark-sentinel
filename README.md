@@ -153,6 +153,27 @@ addresses of this Mac. Private and public targets are allowed, because a LAN ser
 path and a router can name it. Trace and ping results belong to the path and survive a refresh or a
 rebuild; a new probe replaces the previous result for that path.
 
+## Nearby Wi-Fi diagnostics
+
+The `Wi-Fi` button opens a read-only view of what this Mac's adapter can hear. It shows the
+connected network, groups radios under one SSID, keeps hidden SSIDs separate, and lists signal,
+band, channel, width and security for each radio. A channel-occupancy grid counts primary channels
+and suggests a least-crowded channel for your own access point: 1/6/11 on 2.4 GHz, and non-DFS
+channels on 5 GHz.
+
+Scanning is explicit. Opening the sheet sends nothing; only `Scan` or `Rescan` touches the radio.
+The scan never joins a network, captures a handshake, sends deauthentication, or tries a password.
+Results stay in memory, are not persisted, and are not written to the report.
+
+macOS uses Location access to decide whether SSIDs and BSSIDs are visible. The view explains the
+not-determined, denied/restricted and authorized states. If access is declined, signal, channel,
+width and security are still shown, but names are redacted by the system. A grant made during the
+first scan triggers one follow-up scan, because the person had already asked for that scan.
+
+`swift test --filter SentinelWiFiTests` exercises grouping, duplicate-radio removal, channel
+advice, security summaries and connected-network matching with synthetic data. The tests never
+scan a real radio.
+
 ## Manual firewall blocks
 
 The inspector's `Block…` action, or `Add Address…` in the Blocks manager, creates a pf block. The
@@ -192,6 +213,9 @@ scripts/verify-live.sh 20                   # live capture, identification, attr
 `swift test --filter SentinelPathTests` exercises the route, traceroute and ping parsers, probe
 safety, and the passive path builder without sending any network traffic.
 
+`swift test --filter SentinelWiFiTests` exercises Wi-Fi grouping, duplicate-radio removal, channel
+occupancy and advice, and security summaries without scanning a real radio.
+
 `scripts/verify-ui.sh` also writes a screenshot of the app window to `build/ui-evidence/window.png`
 and the rendered pane identifiers to `build/ui-evidence/ui.json`.
 
@@ -213,6 +237,12 @@ and the rendered pane identifiers to `build/ui-evidence/ui.json`.
   explicit, per-target actions.
 - A block covers an address and optionally a port. It cannot name a domain or one application, and
   it requires administrator approval because pf rules belong to the system.
+- The Wi-Fi view is a snapshot of one scan. Nearby radios come and go, and macOS may redact SSIDs
+  and BSSIDs when Location access is off. Duplicate scan entries from the driver are collapsed by
+  BSSID, keeping the strongest report. Channel advice counts primary channels only, so it is not an
+  airtime measurement; 6 GHz has no advice because its usable-channel rules are not modelled here.
+- The app never joins a network from the Wi-Fi view, never captures a handshake, never
+  deauthenticates a client, and never tests a password. It is a list, not an attack tool.
 - The block script has been checked with `pfctl -n` and its unit tests, but applying it for real
   changes this Mac's firewall and cannot be exercised by an automated test.
 - `sharkd` is not used. The packet list streams from `tshark -T ek`, the detail tree from

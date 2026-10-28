@@ -47,6 +47,8 @@ A native macOS app, `Wireshark Sentinel`:
 4. An exportable plain-language report.
 5. A connection path map for the selected conversation, with a passive route rail and explicit,
    separately confirmed ping and traceroute actions.
+6. A read-only nearby Wi-Fi view that lists the connected network, groups radios by SSID, keeps
+   hidden SSIDs separate, and shows signal, band, channel, width, security and channel occupancy.
 
 ## Done predicate
 
@@ -94,6 +96,10 @@ Each has one command. A criterion without pasted output is not met.
 12. The path map parses local routes, traceroute and ping output, refuses non-service targets, and
     merges captured names by value without sending traffic in tests.
     `swift test --filter SentinelPathTests`
+13. The Wi-Fi diagnostics group radios by SSID, keep hidden SSIDs separate, collapse duplicate
+    BSSID entries to the strongest report, compute channel occupancy and least-crowded advice, and
+    never scan a real radio during tests.
+    `swift test --filter SentinelWiFiTests`
 
 ## Out of scope
 
@@ -105,6 +111,9 @@ Each has one command. A criterion without pasted output is not met.
   block; nothing blocks on a verdict or a schedule.
 - Automatic traceroute or ping. Both send new packets and therefore run only from an explicit
   per-target button, never when a path opens or a scan finishes.
+- Joining Wi-Fi networks, recovering or testing passwords, capturing handshakes, sending
+  deauthentication, or any other active wireless attack. The Wi-Fi view scans and lists only.
+- Persisting, exporting or geolocating Wi-Fi results. A scan lives in memory until the app quits.
 - Windows and Linux.
 - Bundling or redistributing the Wireshark engine. It is invoked from the installed app.
 - `sharkd` integration. The packet list streams from `tshark -T ek`, the detail tree from
@@ -170,6 +179,28 @@ so the scope change is explicit and narrow:
 The IPv6 ping helper on this host (`/sbin/ping6`) can fail to resolve a literal address. That is a
 limitation of the local tool, not treated as proof that the target is down: the path map reports the
 ping error and still attempts the system PTR lookup.
+
+## Deliberate scope change: nearby Wi-Fi diagnostics
+
+Eldar asked to find nearby Wi-Fi networks without attacking them. The view is deliberately a
+diagnostic list, not a wireless testing tool:
+
+- **Read-only.** The adapter scans for access points and reads their advertised SSID, BSSID, signal,
+  noise, band, channel, width, PHY and security. It never joins a network, captures a handshake,
+  sends deauthentication, or tries a credential.
+- **Explicit scan.** Opening the sheet sends nothing. Only `Scan` or `Rescan` touches the radio.
+  There is no background refresh and no automatic scan when the sheet appears. A Location grant
+  made during that first explicit scan may trigger one follow-up scan.
+- **Location is only a permission gate.** macOS redacts SSIDs and BSSIDs without Location access.
+  The app uses CoreLocation to request and explain that access, not to compute or store a location.
+  Denied results still show signal, channel, width and security, with names hidden.
+- **Memory only.** Results are held by the app while it runs. Nothing is persisted, exported,
+  geolocated, or written into the report.
+- **Deduplication and grouping.** CoreWLAN can return the same radio more than once in a scan; the
+  scanner keeps the strongest report per BSSID. Radios sharing an SSID are grouped, while hidden
+  radios stay separate unless they share a BSSID.
+- **Channel advice is narrow.** Occupancy counts primary channels only. 2.4 GHz advice considers
+  1/6/11; 5 GHz advice avoids DFS channels. 6 GHz has no recommendation.
 
 ## Assumptions and falsifiers
 

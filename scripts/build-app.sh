@@ -33,6 +33,10 @@ cat > "$BUNDLE/Contents/Info.plist" <<'PLIST'
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Wireshark Sentinel uses Location access only to read the names of nearby Wi-Fi networks for the Wi-Fi diagnostics view. Scanning never joins a network or sends credentials.</string>
+    <key>NSLocationUsageDescription</key>
+    <string>Wireshark Sentinel uses Location access only to read the names of nearby Wi-Fi networks for the Wi-Fi diagnostics view. Scanning never joins a network or sends credentials.</string>
 </dict>
 </plist>
 PLIST

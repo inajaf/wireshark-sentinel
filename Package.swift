@@ -21,6 +21,11 @@ let package = Package(
             dependencies: ["SentinelDomain", "SentinelIdentity"],
             path: "Sources/SentinelPath"
         ),
+        .target(
+            name: "SentinelWiFi",
+            path: "Sources/SentinelWiFi",
+            linkerSettings: [.linkedFramework("CoreWLAN")]
+        ),
         .target(name: "SentinelSuspicion", dependencies: ["SentinelDomain"], path: "Sources/SentinelSuspicion"),
         .target(
             name: "SentinelReport",
@@ -33,9 +38,10 @@ let package = Package(
             dependencies: [
                 "SentinelDomain", "SentinelEngine", "SentinelIdentity",
                 "SentinelAttribution", "SentinelIntel", "SentinelBlock",
-                "SentinelSuspicion", "SentinelReport", "SentinelPath",
+                "SentinelSuspicion", "SentinelReport", "SentinelPath", "SentinelWiFi",
             ],
-            path: "Sources/WiresharkSentinel"
+            path: "Sources/WiresharkSentinel",
+            linkerSettings: [.linkedFramework("CoreLocation")]
         ),
         .testTarget(
             name: "SentinelEngineTests",
@@ -66,6 +72,11 @@ let package = Package(
             name: "SentinelPathTests",
             dependencies: ["SentinelPath", "SentinelTestSupport"],
             path: "Tests/SentinelPathTests"
+        ),
+        .testTarget(
+            name: "SentinelWiFiTests",
+            dependencies: ["SentinelWiFi"],
+            path: "Tests/SentinelWiFiTests"
         ),
         .testTarget(
             name: "SentinelSuspicionTests",
