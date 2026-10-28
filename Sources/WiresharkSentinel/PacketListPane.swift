@@ -5,10 +5,34 @@ import SentinelDomain
 struct PacketListPane: View {
     @EnvironmentObject var model: SentinelModel
 
+    private var visiblePackets: [CapturedPacket] {
+        guard let focus = model.packetFocus else { return model.packets }
+        return model.packets.filter { SentinelModel.isFocused($0, on: focus) }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PaneHeader(title: "Packet list", detail: "\(model.packets.count) frames")
-            Table(model.packets, selection: $model.selectedPacketID) {
+            PaneHeader(
+                title: "Packet list",
+                detail: model.packetFocus == nil
+                    ? "\(model.packets.count) frames"
+                    : "\(visiblePackets.count) of \(model.packets.count) frames"
+            )
+            if let focus = model.packetFocus {
+                HStack(spacing: 6) {
+                    Text("Only \(focus.remoteEndpoint.description), \(focus.transport.rawValue.uppercased())")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Show all") { model.clearPacketFocus() }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 3)
+                .background(Color.accentColor.opacity(0.08))
+            }
+            Table(visiblePackets, selection: $model.selectedPacketID) {
                 TableColumn("No.") { packet in
                     Text("\(packet.id)").monospacedDigit()
                 }

@@ -85,7 +85,68 @@ Signals the engine looks for: unidentified destination, inbound connection to th
 beaconing, unsigned or ad-hoc process, unusual remote port, plaintext protocol, high-volume DNS,
 long-lived idle connection, and traffic carrying no application protocol at all.
 
-It reports. It never blocks, filters, or kills traffic.
+It is passive by default. Deep inspection, external registry lookups and active probing each happen
+only when you ask for them. Blocks are manual and reversible; the app never decides to block on its
+own.
+
+## Deep inspection
+
+Click a conversation card to open the inspector. It reads that one conversation out of the capture
+file, on demand, not once per packet. The report includes:
+
+- network scope (public, private, CGNAT, link-local, documentation and so on), TTL and estimated hops,
+  fragmentation, DSCP/ECN and the IPv6 flow label;
+- TCP state from the socket table, handshake counts, retransmissions, duplicate ACKs, out-of-order
+  segments, zero-window events, keep-alives, RTT, MSS, window scale, SACK and timestamps;
+- TLS version, cipher suite, ALPN, SNI, JA3/JA3S and JA4 where the dissector provides them;
+- the certificate chain with subject, issuer, SANs, validity, serial, key algorithm and SHA-256
+  fingerprint;
+- HTTP hosts, methods, paths, status codes and user agents, DNS questions and answers, QUIC
+  versions, SSH key exchange and DHCP hostnames when present;
+- the owning process, signature and socket details when `lsof` still knows the connection.
+
+Every value says where it came from: captured packets, the Wireshark dissector, a TLS certificate,
+reverse DNS, `lsof`, the process table, an RDAP registry, an ASN lookup, your input, or an inference.
+A certificate name and a port guess never look alike.
+
+The inspector can also narrow the packet list to the frames behind that one conversation.
+
+### Opt-in lookups
+
+`Registry record (RDAP)` sends the remote IP address to `rdap.org` and shows the registry answer.
+`ASN lookup` sends the address to Team Cymru's DNS service. Both are off by default, both are per
+scan, and neither is used for private, loopback, link-local or other non-public addresses. Reverse
+DNS is on by default and can be turned off.
+
+`Verify the service` is separate from the scan because it sends new traffic. It opens one TCP
+connection to the observed port, records whether it answers, and closes it. Loopback, multicast,
+broadcast, unspecified and (unless explicitly allowed) private or CGNAT targets are refused. A TLS
+certificate probe is not offered: the passive scan already reads the certificate from the capture.
+
+## Manual firewall blocks
+
+The inspector's `Block…` action, or `Add Address…` in the Blocks manager, creates a pf block. The
+scope is an IP address or CIDR range plus an optional port and protocol. It is not a domain
+sinkhole, and it cannot target one application: pf sees addresses, not apps. Every block is manual,
+shown before it is applied, and recorded in an audit log.
+
+- One administrator prompt per change. The app writes a shell script and runs it once. It backs up
+  `/etc/pf.conf`, installs `/etc/pf.anchors/com.local.sentinel`, inserts a hook before the first
+  Apple anchor, validates the result with `pfctl -n`, and restores the backup if validation or
+  loading fails.
+- Existing connections to the target are killed after the rules load. pf can only kill states by
+  address, so a port-specific block still closes every state to that address; the editor says so.
+- `Unblock` rewrites the anchor without that target. `Remove All…` empties it. Inactive records and
+  the audit log stay in `~/Library/Application Support/WiresharkSentinel/blocks.json`.
+- `Keep these blocks after this Mac restarts` is off by default. Turning it on installs
+  `/Library/LaunchDaemons/com.local.sentinel.pf.plist`, which loads `/etc/pf.conf` at boot. Turning it
+  off removes the daemon. Either change asks for administrator approval.
+- The planner refuses loopback, multicast, broadcast and unspecified addresses, the exact addresses
+  of this Mac, port zero, zone suffixes and ranges broader than IPv4 `/8` or IPv6 `/32`. An ordinary
+  CIDR range that happens to contain this Mac is allowed, with a warning; only the exact local
+  address is a hard refusal.
+
+The app is ad-hoc signed, so a Network Extension is not available. pf is the enforcement layer.
 
 ## Verification
 
@@ -108,6 +169,14 @@ and the rendered pane identifiers to `build/ui-evidence/ui.json`.
 - Names are only as good as the traffic. A host that uses neither SNI nor DNS, and has no reverse
   record, stays unidentified, and the app says so rather than guessing.
 - The capture is not decrypted. Content inside TLS is not read; identity comes from the handshake
-  and the certificate, not from the payload.
+  and the certificate, not from the payload. TLS 1.3 commonly encrypts certificates, so some
+  connections have a handshake but no certificate to show.
+- Deep inspection reads the capture file after the fact. It does not re-dissect every live packet.
+- RDAP and ASN lookups leave this Mac with the remote IP address. Active probing opens a new
+  connection that the far end can see. Both are explicit, per-target actions.
+- A block covers an address and optionally a port. It cannot name a domain or one application, and
+  it requires administrator approval because pf rules belong to the system.
+- The block script has been checked with `pfctl -n` and its unit tests, but applying it for real
+  changes this Mac's firewall and cannot be exercised by an automated test.
 - `sharkd` is not used. The packet list streams from `tshark -T ek`, the detail tree from
   `tshark -T json`, and the bytes from `tshark -x`.

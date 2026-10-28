@@ -6,6 +6,7 @@ import SentinelDomain
 struct SentinelPane: View {
     @EnvironmentObject var model: SentinelModel
     @State private var showOnlyAttention = true
+    @State private var inspecting: FlowAssessment?
 
     private var visible: [FlowAssessment] {
         showOnlyAttention
@@ -33,11 +34,17 @@ struct SentinelPane: View {
                     LazyVStack(alignment: .leading, spacing: 8) {
                         ForEach(visible) { assessment in
                             AssessmentCard(assessment: assessment)
+                                .contentShape(Rectangle())
+                                .onTapGesture { inspecting = assessment }
+                                .help("Inspect this conversation")
                         }
                     }
                     .padding(8)
                 }
             }
+        }
+        .sheet(item: $inspecting) { assessment in
+            ConnectionInspector(assessment: assessment)
         }
         .onAppear { model.registry.note("sentinel") }
         .accessibilityIdentifier("sentinel")
@@ -63,6 +70,9 @@ struct AssessmentCard: View {
                     .padding(.vertical, 2)
                     .background(assessment.verdict.tint.opacity(0.18), in: Capsule())
                     .foregroundStyle(assessment.verdict.tint)
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
 
             Text("\(assessment.key.transport.rawValue.uppercased()) \(directionWord) \(assessment.key.remoteEndpoint.description)")

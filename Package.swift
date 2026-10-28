@@ -14,6 +14,8 @@ let package = Package(
         .target(name: "SentinelEngine", dependencies: ["SentinelDomain"], path: "Sources/SentinelEngine"),
         .target(name: "SentinelIdentity", dependencies: ["SentinelDomain"], path: "Sources/SentinelIdentity"),
         .target(name: "SentinelAttribution", dependencies: ["SentinelDomain"], path: "Sources/SentinelAttribution"),
+        .target(name: "SentinelIntel", dependencies: ["SentinelDomain"], path: "Sources/SentinelIntel"),
+        .target(name: "SentinelBlock", dependencies: ["SentinelDomain"], path: "Sources/SentinelBlock"),
         .target(name: "SentinelSuspicion", dependencies: ["SentinelDomain"], path: "Sources/SentinelSuspicion"),
         .target(
             name: "SentinelReport",
@@ -25,7 +27,8 @@ let package = Package(
             name: "WiresharkSentinel",
             dependencies: [
                 "SentinelDomain", "SentinelEngine", "SentinelIdentity",
-                "SentinelAttribution", "SentinelSuspicion", "SentinelReport",
+                "SentinelAttribution", "SentinelIntel", "SentinelBlock",
+                "SentinelSuspicion", "SentinelReport",
             ],
             path: "Sources/WiresharkSentinel"
         ),
@@ -43,6 +46,16 @@ let package = Package(
             name: "SentinelAttributionTests",
             dependencies: ["SentinelAttribution", "SentinelTestSupport"],
             path: "Tests/SentinelAttributionTests"
+        ),
+        .testTarget(
+            name: "SentinelIntelTests",
+            dependencies: ["SentinelIntel", "SentinelTestSupport"],
+            path: "Tests/SentinelIntelTests"
+        ),
+        .testTarget(
+            name: "SentinelBlockTests",
+            dependencies: ["SentinelBlock", "SentinelTestSupport"],
+            path: "Tests/SentinelBlockTests"
         ),
         .testTarget(
             name: "SentinelSuspicionTests",

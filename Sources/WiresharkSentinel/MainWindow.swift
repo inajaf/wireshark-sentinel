@@ -28,6 +28,7 @@ struct MainWindow: View {
 
 struct ControlBar: View {
     @EnvironmentObject var model: SentinelModel
+    @State private var showingBlocks = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -64,6 +65,21 @@ struct ControlBar: View {
                 Label("Export", systemImage: "square.and.arrow.down")
             }
             .disabled(model.assessments.isEmpty)
+
+            Button {
+                showingBlocks = true
+            } label: {
+                Label(
+                    model.blockState.activeRecords.isEmpty
+                        ? "Blocks"
+                        : "Blocks (\(model.blockState.activeRecords.count))",
+                    systemImage: "hand.raised"
+                )
+            }
+            .help("Review firewall blocks, persistence and the audit log")
+            .sheet(isPresented: $showingBlocks) {
+                BlockManagerView()
+            }
 
             Spacer()
 

@@ -5,6 +5,8 @@ import SentinelDomain
 import SentinelEngine
 import SentinelIdentity
 import SentinelAttribution
+import SentinelIntel
+import SentinelBlock
 import SentinelSuspicion
 import SentinelReport
 
@@ -28,6 +30,10 @@ struct FlowAggregate: Sendable {
     var localPorts: [UInt16]
     var packetTimes: [Date]
     var byteCount: Int
+    var bytesSent: Int
+    var bytesReceived: Int
+    var packetsSent: Int
+    var packetsReceived: Int
     var protocols: Set<String>
     var sawPlaintext: Bool
     var direction: FlowDirection
@@ -43,6 +49,10 @@ struct FlowAggregate: Sendable {
         self.localPorts = []
         self.packetTimes = []
         self.byteCount = 0
+        self.bytesSent = 0
+        self.bytesReceived = 0
+        self.packetsSent = 0
+        self.packetsReceived = 0
         self.protocols = []
         self.sawPlaintext = false
         self.inboundInitiated = inboundInitiated
@@ -81,12 +91,26 @@ final class SentinelModel: ObservableObject {
     @Published var statusText = "Starting the Wireshark engine."
     @Published var engineMissing = false
     @Published var lastReportPath: String?
+    @Published var scannedDetails: [FlowKey: ConnectionDetails] = [:]
+    @Published var scanningFlow: FlowKey?
+    @Published var scanError: String?
+    @Published var packetFocus: FlowKey?
+    @Published var probeResults: [FlowKey: ActiveProbeResult] = [:]
+    @Published var probingFlow: FlowKey?
+    @Published var blockState: BlockState
+    @Published var blockError: String?
+    @Published var blockOutput: String?
+    @Published var isApplyingBlock = false
 
     let registry = UIRegistry()
 
-    private var engine: CaptureEngine?
+    private var engine: TSharkEngine?
     private var install: WiresharkInstall?
     private let identity = IdentityResolver()
+    private let intel = IntelClient()
+    private let prober = ActiveProber()
+    private let blockStore: BlockStore
+    private let blockController = PFBlockController()
     private var attributor: ProcessAttributor?
     private let suspicion = SuspicionEngine()
 
@@ -102,6 +126,17 @@ final class SentinelModel: ObservableObject {
     private var processedPackets = 0
 
     private static let packetLimit = 20_000
+
+    init() {
+        let support = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("WiresharkSentinel", isDirectory: true)
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support/WiresharkSentinel", isDirectory: true)
+        let store = BlockStore(url: support.appendingPathComponent("blocks.json"))
+        blockStore = store
+        blockState = store.load()
+    }
 
     /// Publishing every packet makes SwiftUI re-diff the whole table per packet, which
     /// throttled ingest to about 61 packets a second on this machine. Publishing in
@@ -251,6 +286,13 @@ final class SentinelModel: ObservableObject {
         flows[conversation]?.noteLocalPort(oriented.key.localEndpoint.port)
         flows[conversation]?.packetTimes.append(packet.time)
         flows[conversation]?.byteCount += packet.length
+        if oriented.key.localEndpoint.host == packet.source {
+            flows[conversation]?.bytesSent += packet.length
+            flows[conversation]?.packetsSent += 1
+        } else {
+            flows[conversation]?.bytesReceived += packet.length
+            flows[conversation]?.packetsReceived += 1
+        }
         flows[conversation]?.protocols.insert(packet.proto)
         if Self.plaintextProtocols.contains(packet.proto) { flows[conversation]?.sawPlaintext = true }
     }
@@ -461,6 +503,420 @@ final class SentinelModel: ObservableObject {
             if seen.insert(token).inserted { output.append(fact) }
         }
         return output
+    }
+
+    // MARK: - Deep scan
+
+    /// Reads one conversation out of the capture file in depth. This is explicit
+    /// and cached: running a second tshark pass per packet would make live capture
+    /// slow, and the result for a finished conversation does not change.
+    func deepScan(_ assessment: FlowAssessment, options: ScanOptions = .preset(.deep)) async {
+        guard scanningFlow == nil else { return }
+        guard let engine, let captureFile = engine.captureFileURL else {
+            scanError = "There is no capture file yet. Start a capture, let some traffic arrive, then scan."
+            return
+        }
+        guard let install else {
+            scanError = "Wireshark is not installed, so there is no dissector to read the capture with."
+            return
+        }
+
+        scanningFlow = assessment.key
+        scanError = nil
+        defer { scanningFlow = nil }
+
+        let conversation = ConversationKey(
+            transport: assessment.key.transport,
+            remoteHost: assessment.key.remoteEndpoint.host,
+            remotePort: assessment.key.remoteEndpoint.port
+        )
+        let aggregate = flows[conversation]
+        let facts = dedupe(factsByHost[assessment.key.remoteEndpoint.host] ?? [])
+        let hostIdentity = identity.identity(host: assessment.key.remoteEndpoint.host, facts: facts)
+        let listeners = await LocalListenerTable.current()
+        let attributor = self.attributor
+        let intel = self.intel
+        let flow = assessment.key
+        let localPort = aggregate?.localPorts.first ?? flow.localEndpoint.port
+        let localHost = flow.localEndpoint.host
+        let remote = flow.remoteEndpoint
+
+        do {
+            let details = try await Task.detached(priority: .userInitiated) { () -> ConnectionDetails in
+                // lsof, codesign and the resolver are blocking. A detached task
+                // keeps all of that off the main actor while the sheet stays live.
+                attributor?.refresh()
+                let process = aggregate.flatMap {
+                    Self.attribute(
+                        attributor: attributor,
+                        aggregate: $0,
+                        remote: remote,
+                        listeners: listeners
+                    )
+                }
+                let reverseDNS = options.resolvePTR ? SystemPTRResolver().name(for: remote.host) : nil
+                let socket = process.map {
+                    SocketDetails(
+                        pid: $0.pid,
+                        command: $0.name,
+                        localAddress: localHost,
+                        localPort: localPort,
+                        remoteAddress: remote.host,
+                        remotePort: remote.port,
+                        transport: flow.transport
+                    )
+                }
+                let request = DeepScanRequest(
+                    flow: flow,
+                    captureFile: captureFile,
+                    options: options,
+                    socket: socket,
+                    process: process,
+                    identity: hostIdentity,
+                    reverseDNS: reverseDNS
+                )
+                var details = try await TSharkDeepScanner(install: install).scan(request)
+                if options.lookupRDAP || options.lookupASN {
+                    let report = await intel.enrich(
+                        address: remote.host,
+                        includeRDAP: options.lookupRDAP,
+                        includeASN: options.lookupASN
+                    )
+                    Self.apply(report, to: &details)
+                }
+                return details
+            }.value
+            scannedDetails[assessment.key] = details
+        } catch {
+            scanError = String(describing: error)
+        }
+    }
+
+    func connectionDetails(for assessment: FlowAssessment) -> ConnectionDetails? {
+        scannedDetails[assessment.key]
+    }
+
+    /// Merges registry answers into the packet-derived report without pretending
+    /// they came from the capture. Each new value keeps its RDAP provenance.
+    private nonisolated static func apply(_ report: IntelReport, to details: inout ConnectionDetails) {
+        if let rdap = report.rdap {
+            details.network.organization = rdap.organization ?? details.network.organization
+            details.network.networkName = rdap.networkName ?? details.network.networkName
+            details.network.asn = rdap.asn ?? details.network.asn
+            details.network.registry = rdap.registry ?? details.network.registry
+            details.network.country = rdap.country ?? details.network.country
+            details.network.abuseContact = rdap.abuseContact ?? details.network.abuseContact
+            if let handle = rdap.handle, let registry = rdap.registry {
+                details.observations.append(
+                    ConnectionObservation(
+                        section: "Network",
+                        label: "Registry handle",
+                        value: "\(handle) at \(registry)",
+                        source: .rdap,
+                        confidence: .observed
+                    )
+                )
+            }
+            if let abuse = rdap.abuseContact {
+                details.observations.append(
+                    ConnectionObservation(
+                        section: "Network",
+                        label: "Abuse contact",
+                        value: abuse,
+                        source: .rdap,
+                        confidence: .observed
+                    )
+                )
+            }
+        }
+
+        if let asn = report.asn {
+            details.network.asn = asn.asn
+            details.network.asnDescription = asn.description
+            if details.network.networkName == nil { details.network.networkName = asn.description }
+            details.network.country = details.network.country ?? asn.country
+            details.observations.append(
+                ConnectionObservation(
+                    section: "Network",
+                    label: "Autonomous system",
+                    value: [asn.asn, asn.description].compactMap { $0 }.joined(separator: " · "),
+                    source: .asn,
+                    confidence: .observed
+                )
+            )
+        }
+
+        details.warnings.append(contentsOf: report.warnings)
+    }
+
+    // MARK: - Active probe
+
+    /// Sends one TCP connection to the observed port. Never called by a scan; only
+    /// from the inspector's explicit probe button.
+    func runActiveProbe(_ assessment: FlowAssessment, options: ScanOptions = .preset(.active)) async {
+        guard probingFlow == nil else { return }
+        let remote = assessment.key.remoteEndpoint
+        guard assessment.key.transport == .tcp else {
+            probeResults[assessment.key] = ActiveProbeResult(
+                host: remote.host,
+                port: remote.port,
+                transport: assessment.key.transport,
+                kind: .tcpConnect,
+                opened: false,
+                error: "Active probing supports TCP only. This conversation is \(assessment.key.transport.rawValue.uppercased())."
+            )
+            return
+        }
+
+        probingFlow = assessment.key
+        defer { probingFlow = nil }
+        let result = await prober.probe(
+            host: remote.host,
+            port: remote.port,
+            kind: .tcpConnect,
+            timeout: options.activeTimeout,
+            allowPrivate: options.includePrivate
+        )
+        probeResults[assessment.key] = result
+    }
+
+    // MARK: - Blocking
+
+    /// The addresses and broadcasts used for block safety. Bootstrap normally has
+    /// them already; the fallback keeps validation correct before a capture starts.
+    var blockLocalAddresses: Set<String> {
+        localAddresses.isEmpty ? LocalAddresses.current() : localAddresses
+    }
+
+    var blockBroadcastAddresses: Set<String> {
+        broadcastAddresses.isEmpty ? LocalAddresses.currentBroadcasts() : broadcastAddresses
+    }
+
+    /// The target a person most likely means when they press Block on a card.
+    /// The observed remote port is included by default because "this service" is
+    /// usually the intent; the editor lets them widen it to the whole address.
+    func suggestedBlockTarget(for assessment: FlowAssessment, includePort: Bool = true) -> BlockTarget {
+        let remote = assessment.key.remoteEndpoint
+        let hasPort = includePort && remote.port != 0 && assessment.key.transport != .other
+        let transport: BlockTransport
+        if hasPort {
+            switch assessment.key.transport {
+            case .tcp: transport = .tcp
+            case .udp: transport = .udp
+            case .other: transport = .any
+            }
+        } else {
+            transport = .any
+        }
+        return BlockTarget(
+            address: remote.host,
+            port: hasPort ? remote.port : nil,
+            transport: transport,
+            direction: .both,
+            note: assessment.identity.evidencedName ?? assessment.verdict.label,
+            sourceEndpoint: remote.description
+        )
+    }
+
+    /// Validates the target and shows the whole plan that Apply will install:
+    /// existing active targets plus the one being edited. The preview must show the
+    /// same ruleset, not just the addition.
+    func planBlock(adding target: BlockTarget) -> BlockPlan {
+        BlockPlanBuilder.plan(
+            targets: blockState.activeTargets + [target],
+            localAddresses: blockLocalAddresses,
+            broadcastAddresses: blockBroadcastAddresses
+        )
+    }
+
+    @discardableResult
+    func applyBlock(
+        target: BlockTarget,
+        persistAfterReboot: Bool? = nil,
+        reason: String = "Blocked from Wireshark Sentinel"
+    ) async -> Bool {
+        await applyBlockTargets(
+            blockState.activeTargets + [target],
+            action: "block",
+            reason: reason,
+            persist: persistAfterReboot
+        )
+    }
+
+    @discardableResult
+    func unblock(recordIDs: Set<UUID>, persistAfterReboot: Bool? = nil) async -> Bool {
+        guard !recordIDs.isEmpty else { return true }
+        let removed = blockState.records.filter { recordIDs.contains($0.id) }
+        let remaining = blockState.activeTargets.filter { target in
+            !removed.contains(where: { $0.target.id == target.id })
+        }
+        return await applyBlockTargets(
+            remaining,
+            action: "unblock",
+            reason: "Unblocked from Wireshark Sentinel",
+            persist: persistAfterReboot
+        )
+    }
+
+    @discardableResult
+    func unblockAll(persistAfterReboot: Bool? = nil) async -> Bool {
+        await applyBlockTargets(
+            [],
+            action: "unblock-all",
+            reason: "All blocks removed from Wireshark Sentinel",
+            persist: persistAfterReboot
+        )
+    }
+
+    /// Reinstalls the current anchor after a reboot or after someone flushed pf.
+    @discardableResult
+    func reapplyBlocks() async -> Bool {
+        await applyBlockTargets(
+            blockState.activeTargets,
+            action: "reapply",
+            reason: "Reapplied from Wireshark Sentinel",
+            persist: nil
+        )
+    }
+
+    /// Changing persistence rewrites the rules, so it asks for the same one admin
+    /// prompt as any other firewall change. It goes through the same path even when
+    /// no blocks are active, because that is how an existing LaunchDaemon is removed.
+    @discardableResult
+    func setBlockPersistence(_ enabled: Bool) async -> Bool {
+        guard blockState.persistAfterReboot != enabled else { return true }
+        return await applyBlockTargets(
+            blockState.activeTargets,
+            action: "persistence",
+            reason: "Persistence changed in Wireshark Sentinel",
+            persist: enabled
+        )
+    }
+
+    /// One path for every firewall change: validate, ask once, install, audit.
+    private func applyBlockTargets(
+        _ targets: [BlockTarget],
+        action: String,
+        reason: String,
+        persist: Bool?
+    ) async -> Bool {
+        guard !isApplyingBlock else { return false }
+
+        let plan = BlockPlanBuilder.plan(
+            targets: targets,
+            localAddresses: blockLocalAddresses,
+            broadcastAddresses: blockBroadcastAddresses
+        )
+        guard plan.isValid else {
+            blockError = plan.errors.joined(separator: "\n")
+            return false
+        }
+
+        let persistence = persist ?? blockState.persistAfterReboot
+        let previous = blockState
+        isApplyingBlock = true
+        blockError = nil
+        defer { isApplyingBlock = false }
+
+        do {
+            let result = try await blockController.apply(plan: plan, persistAfterReboot: persistence)
+            blockOutput = result.output
+            blockState.persistAfterReboot = persistence
+            reconcileRecords(with: plan.targets, reason: reason, rules: plan.rules)
+            blockState.audit.append(
+                BlockAuditEntry(
+                    action: action,
+                    targets: plan.targets.isEmpty ? ["all blocks"] : plan.targets.map(\.displayName),
+                    result: "applied",
+                    detail: result.anchorPath
+                )
+            )
+            saveBlockState()
+            return true
+        } catch {
+            let message = String(describing: error)
+            blockError = message
+            blockOutput = nil
+            // The firewall did not change, so the stored state must not pretend it
+            // did. Keep the failure in the audit trail, then restore the records.
+            blockState = previous
+            blockState.persistAfterReboot = previous.persistAfterReboot
+            blockState.audit.append(
+                BlockAuditEntry(
+                    action: action,
+                    targets: plan.targets.isEmpty ? ["all blocks"] : plan.targets.map(\.displayName),
+                    result: "failed",
+                    detail: message
+                )
+            )
+            saveBlockState()
+            return false
+        }
+    }
+
+    /// Makes the stored records agree exactly with the rules that pf accepted.
+    /// Targets that were removed become inactive history instead of disappearing.
+    private func reconcileRecords(with targets: [BlockTarget], reason: String, rules: [PFRule]) {
+        let ruleText = rules.map(\.text).joined(separator: "\n")
+        let ids = Set(targets.map(\.id))
+        let now = Date()
+
+        for index in blockState.records.indices {
+            if ids.contains(blockState.records[index].target.id) {
+                blockState.records[index].active = true
+                blockState.records[index].appliedAt = now
+                blockState.records[index].ruleText = ruleText
+            } else {
+                blockState.records[index].active = false
+            }
+        }
+
+        for target in targets where !blockState.records.contains(where: { $0.target.id == target.id }) {
+            blockState.records.append(
+                BlockRecord(
+                    target: target,
+                    reason: target.note ?? reason,
+                    appliedAt: now,
+                    active: true,
+                    ruleText: ruleText
+                )
+            )
+        }
+    }
+
+    private func saveBlockState() {
+        do {
+            try blockStore.save(blockState)
+        } catch {
+            blockError = (blockError.map { $0 + "\n" } ?? "")
+                + "The block record could not be saved: \(error)"
+        }
+    }
+
+    // MARK: - Packet focus
+
+    /// Narrows the packet list to the frames behind one conversation. The remote
+    /// address and service port are the stable identity; the local ephemeral port
+    /// can rotate while the conversation is still the same one.
+    func focusPackets(on assessment: FlowAssessment) {
+        packetFocus = assessment.key
+        if let first = packets.first(where: { Self.isFocused($0, on: assessment.key) }) {
+            selectPacket(first.id)
+        }
+    }
+
+    func clearPacketFocus() {
+        packetFocus = nil
+    }
+
+    nonisolated static func isFocused(_ packet: CapturedPacket, on key: FlowKey) -> Bool {
+        if packet.source == key.remoteEndpoint.host, packet.sourcePort == key.remoteEndpoint.port {
+            return true
+        }
+        if packet.destination == key.remoteEndpoint.host, packet.destinationPort == key.remoteEndpoint.port {
+            return true
+        }
+        return false
     }
 
     func selectPacket(_ id: Int) {

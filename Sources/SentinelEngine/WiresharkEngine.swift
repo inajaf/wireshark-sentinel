@@ -151,6 +151,11 @@ public final class TSharkEngine: CaptureEngine, @unchecked Sendable {
         return DetailParser.detail(json: Data(json.utf8), hexDump: hex, frameNumber: frameNumber)
     }
 
+    /// The file the live capture is being written to, for the on-demand deep scan.
+    public var captureFileURL: URL? {
+        lock.withLock { captureFile }
+    }
+
     static func parseInterfaces(_ output: String) -> [CaptureInterface] {
         output.split(separator: "\n").compactMap { rawLine in
             let line = rawLine.trimmingCharacters(in: .whitespaces)

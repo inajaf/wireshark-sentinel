@@ -81,6 +81,14 @@ Each has one command. A criterion without pasted output is not met.
    `scripts/build-app.sh && scripts/verify-live.sh 20`
 8. REA can observe the running app's window, as an independent check that it is a real UI.
    `scripts/verify-ui.sh`
+9. The inspector reads TCP, TLS, certificate and application detail from a recorded capture.
+   `swift test --filter DeepScanTests`
+10. Registry/ASN lookup and active probing refuse non-public targets, and the HTTP probe parser reads
+    a real response shape.
+    `swift test --filter IntelTests`
+11. The block planner refuses unsafe targets, emits pf rules for both address families, the apply
+    script is valid shell, and records survive a store round trip.
+    `swift test --filter SentinelBlockTests`
 
 ## Out of scope
 
@@ -88,7 +96,8 @@ Each has one command. A criterion without pasted output is not met.
 - Reading or writing the user's existing `.pcap` files beyond the recorded fixture.
 - Privileged capture. `dumpcap` works here through the `access_bpf` group and must keep working without
   sudo.
-- Blocking, filtering or killing traffic. The app observes and reports; it never enforces.
+- Automatic blocking, filtering or killing traffic. Enforcement is limited to a manual, reviewed pf
+  block; nothing blocks on a verdict or a schedule.
 - Windows and Linux.
 - Bundling or redistributing the Wireshark engine. It is invoked from the installed app.
 - `sharkd` integration. The packet list streams from `tshark -T ek`, the detail tree from
@@ -105,6 +114,32 @@ Each has one command. A criterion without pasted output is not met.
   later and can be reviewed by someone else.
 - **Verdicts over a raw packet list.** The request, read plainly, wants fewer mysteries and less
   reading, so the new value is the interpretation, not more rows.
+
+## Deliberate scope change: manual blocking
+
+The original out-of-scope line said the app observes and reports and never enforces. Eldar later
+asked for the ability to stop a connection, so that line was changed on purpose. It is a scope
+change, not an accidental feature.
+
+The change is deliberately narrow:
+
+- **Manual only.** No verdict, score, schedule or heuristic can block. A person presses Block, sees
+  the exact target and generated pf rules, and approves one administrator prompt.
+- **Address scope only.** The target is an IP address or CIDR range and an optional port and
+  protocol. There is no domain sinkhole and no per-application rule, because pf cannot express
+  either.
+- **Audited and reversible.** Every change is written to
+  `~/Library/Application Support/WiresharkSentinel/blocks.json` with a timestamp, target, result and
+  error. Unblocking rewrites the same anchor.
+- **Fail closed on validation, fail safe on apply.** Loopback, multicast, broadcast, unspecified,
+  exact self and exact broadcast targets, port zero and ranges broader than IPv4 `/8` or IPv6 `/32`
+  are refused. The script backs up `/etc/pf.conf`, tests the new configuration with `pfctl -n`, and
+  restores the backup if validation or loading fails.
+- **Opt-in persistence.** Blocks do not survive a restart unless the person turns on the LaunchDaemon.
+
+The enforcement layer is pf anchor `com.local.sentinel`, because the app is ad-hoc signed and a
+Network Extension is not available on this machine. The anchor hook is inserted before the first
+Apple anchor so Sentinel's `quick` rules are evaluated first.
 
 ## Assumptions and falsifiers
 
