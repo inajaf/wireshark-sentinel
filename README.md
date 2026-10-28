@@ -5,7 +5,7 @@ frontend around it, then adds the part Wireshark does not do for you: it works o
 remote resource is, which program on this Mac opened the connection, and whether the connection
 deserves your attention.
 
-![packet list, details, bytes and the Sentinel pane](build/ui-evidence/window.png)
+![packet list, details, bytes and the Sentinel pane](deliverables/sentinel-window.png)
 
 ## Why this shape
 
@@ -42,6 +42,9 @@ Nothing is copied or redistributed. Wireshark must be installed, and this app in
 scripts/build-app.sh
 open "build/Wireshark Sentinel.app"
 ```
+
+The app icon is generated from `scripts/make-icon.swift`; run `scripts/make-icon.sh` after changing
+it. `scripts/build-app.sh` regenerates a missing icon and copies it into the bundle.
 
 ## What you get
 
